@@ -22,6 +22,8 @@ and exit.
 Checkpoint (checkpoints/NAME/): weights-<games>.npy + meta.json (config, game count, RNG
 state, pending log window). The weights file is written first, then meta.json is atomically
 replaced to point at it, so a crash mid-save always leaves a consistent checkpoint.
+Milestones (checkpoints/NAME/milestones/games-<games>/): a permanent full checkpoint saved
+exactly when training reaches each game count in `milestones`; never pruned.
 Log (logs/NAME.csv): one row per log_every games.
 """
 
@@ -81,6 +83,7 @@ class Config:
     decay_factor: float = 1.0
     decay_every: int = 0  # 0 = constant alpha
     keep_every: int = 0  # keep a weights snapshot every this many games (0 = only the latest)
+    milestones: list = dataclasses.field(default_factory=list)  # game counts with permanent copies
 
     def __post_init__(self):
         if self.update_order not in ("online", "backward"):
@@ -88,6 +91,9 @@ class Config:
         for name in ("games", "checkpoint_every", "log_every"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
+        if any(int(m) <= 0 for m in self.milestones):
+            raise ValueError("milestones must be positive game counts")
+        self.milestones = sorted({int(m) for m in self.milestones})
 
     def alpha_at(self, games_done):
         """Step decay: alpha * decay_factor ** (games_done // decay_every)."""
@@ -154,6 +160,9 @@ def save_checkpoint(ckpt_dir, W, meta, keep_every=0):
     """Write weights-<games>.npy, then atomically point meta.json at it, then prune old weights."""
     ckpt_dir = Path(ckpt_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+    # a run directory has a single writer, so any .tmp here was left by a save that crashed
+    for stale in [*ckpt_dir.glob("weights-*.npy.tmp"), *ckpt_dir.glob("meta.json.tmp")]:
+        stale.unlink()
     games = meta["games_done"]
     weights_file = f"weights-{games:010d}.npy"
     _write_atomic(ckpt_dir / weights_file, lambda f: np.save(f, W))
@@ -235,6 +244,15 @@ def _next_boundary(done, every):
     return every - done % every if every > 0 else sys.maxsize
 
 
+def _to_next_milestone(done, milestones):
+    return next((m - done for m in milestones if m > done), sys.maxsize)
+
+
+def milestone_dir(ckpt_dir, games):
+    """checkpoints/RUN/milestones/games-<games>/, a complete checkpoint directory."""
+    return Path(ckpt_dir) / "milestones" / f"games-{games:010d}"
+
+
 def train(cfg=None, *, resume_run=None, games=None, hours=None,
           checkpoint_root=CHECKPOINT_ROOT, log_root=LOG_ROOT, verbose=True):
     """Train a new run (cfg) or resume one (resume_run=NAME, optional new total `games`).
@@ -300,7 +318,8 @@ def train(cfg=None, *, resume_run=None, games=None, hours=None,
             n = min(CHUNK_GAMES, cfg.games - games_done,
                     _next_boundary(games_done, cfg.log_every),
                     _next_boundary(games_done, cfg.checkpoint_every),
-                    _next_boundary(games_done, cfg.decay_every))
+                    _next_boundary(games_done, cfg.decay_every),
+                    _to_next_milestone(games_done, cfg.milestones))
             scores = np.zeros(n, np.int64)
             tiles = np.zeros(n, np.int64)
             moves = np.zeros(n, np.int64)
@@ -321,6 +340,12 @@ def train(cfg=None, *, resume_run=None, games=None, hours=None,
                 if verbose:
                     _print_row(row)
                 window = {"scores": [], "max_tiles": [], "moves": [], "train_s": 0.0}
+            if games_done in cfg.milestones:
+                # resuming from an earlier checkpoint replays to this point bit-identically,
+                # so overwriting an existing milestone rewrites the same weights
+                save_checkpoint(milestone_dir(ckpt_dir, games_done), W, make_meta())
+                if verbose:
+                    _say(f"milestone: {games_done:,} games saved to {milestone_dir(ckpt_dir, games_done)}")
             # chunking never changes the result, so saving at a time-triggered chunk boundary
             # resumes exactly like saving on a game-count boundary
             now = time.perf_counter()
@@ -373,6 +398,14 @@ def _print_row(row):
 # ---------------------------------------------------------------- CLI
 
 
+def _int_list(text):
+    """'1000,10000,1e6' -> [1000, 10000, 1000000]."""
+    try:
+        return [int(float(x)) for x in text.replace("_", "").split(",") if x.strip()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected comma-separated game counts, got {text!r}")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="TD(0) afterstate training of the 4x6-tuple network.")
     p.add_argument("--run", required=True, help="run name: checkpoints/RUN/ and logs/RUN.csv")
@@ -388,6 +421,8 @@ def main(argv=None):
     p.add_argument("--decay-factor", type=float, default=1.0, help="multiply alpha by this ...")
     p.add_argument("--decay-every", type=int, default=0, help="... every this many games (0 = off)")
     p.add_argument("--keep-every", type=int, default=0, help="keep a weights snapshot every N games")
+    p.add_argument("--milestones", type=_int_list, default=[], metavar="N,N,...",
+                   help="game counts at which to save a permanent copy to checkpoints/RUN/milestones/")
     p.add_argument("--hours", type=float, help="stop (with checkpoint) after this many hours")
     p.add_argument("--resume", action="store_true",
                    help="continue RUN from its checkpoint; only --games and --hours apply")
@@ -406,7 +441,7 @@ def main(argv=None):
         cfg = Config(run=args.run, games=args.games, alpha=args.alpha, seed=args.seed,
                      update_order=args.update_order, checkpoint_every=args.checkpoint_every,
                      checkpoint_minutes=args.checkpoint_minutes, log_every=args.log_every, decay_factor=args.decay_factor,
-                     decay_every=args.decay_every, keep_every=args.keep_every)
+                     decay_every=args.decay_every, keep_every=args.keep_every, milestones=args.milestones)
         summary = train(cfg, hours=args.hours, **roots)
     _say(json.dumps(summary, indent=1))
 

@@ -258,7 +258,21 @@ def test_checkpoint_keeps_only_latest_weights_unless_asked(tmp_path):
     assert json.loads((tmp_path / "meta.json").read_text())["weights_file"] == "weights-0000000300.npy"
 
 
-@pytest.mark.parametrize("order, split", [("online", 150), ("backward", 150), ("backward", 170)])
+def test_save_removes_leftovers_of_a_crashed_save(tmp_path):
+    W = M.new_weights()
+    T.save_checkpoint(tmp_path, W, {"games_done": 100})
+    # simulate a crash mid-save: half-written files left behind
+    (tmp_path / "weights-0000000200.npy.tmp").write_bytes(b"\0" * 1000)
+    (tmp_path / "meta.json.tmp").write_text("{")
+    unrelated = tmp_path / "notes.tmp"
+    unrelated.write_text("not ours")
+    T.save_checkpoint(tmp_path, W, {"games_done": 300})
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["meta.json", "notes.tmp", "weights-0000000300.npy"]
+    W2, meta = T.load_checkpoint(tmp_path)
+    assert meta["games_done"] == 300
+
+
+@pytest.mark.parametrize("order, split",[("online", 150), ("backward", 150), ("backward", 170)])
 def test_resume_matches_uninterrupted(tmp_path, order, split):
     full = T.train(small_config("full", 300, update_order=order), **roots(tmp_path))
     # 150 is mid log-window (log_every=100): the pending window must survive the restart;
@@ -304,6 +318,45 @@ def test_checkpoint_by_games_or_time_whichever_first(tmp_path, monkeypatch):
     cfg = T.Config(run="w", games=500, log_every=100, checkpoint_every=200, checkpoint_minutes=60)
     T.train(cfg, **roots(tmp_path))
     assert saves == [200, 400, 500]
+
+
+def test_milestones_saved_permanently_at_exact_game_counts(tmp_path):
+    ms = [100, 250, 500, 10_000]  # 250: off every log/checkpoint boundary; 10k: never reached
+    T.train(small_config("m", 600, milestones=ms), **roots(tmp_path))
+    ckpt = tmp_path / "ckpt" / "m"
+    saved = sorted(p.name for p in (ckpt / "milestones").iterdir())
+    assert saved == ["games-0000000100", "games-0000000250", "games-0000000500"]
+    # the regular checkpoint still keeps only its latest weights; milestones are untouched
+    assert [p.name for p in ckpt.glob("weights-*.npy")] == ["weights-0000000600.npy"]
+
+    # a milestone holds exactly the weights of a run trained to that game count
+    T.train(small_config("ref", 250), **roots(tmp_path))
+    W250, meta250 = T.load_checkpoint(T.milestone_dir(ckpt, 250))
+    Wref, metaref = T.load_checkpoint(tmp_path / "ckpt" / "ref")
+    assert meta250["games_done"] == 250 and np.array_equal(W250, Wref)
+    assert meta250["rng_state"] == metaref["rng_state"]
+
+
+def test_milestones_survive_resume(tmp_path):
+    ms = [100, 250, 500]
+    T.train(small_config("a", 600, milestones=ms), **roots(tmp_path))
+    T.train(small_config("b", 200, milestones=ms), **roots(tmp_path))  # stop between milestones
+    T.train(resume_run="b", games=600, **roots(tmp_path))
+    for g in ms:
+        Wa, _ = T.load_checkpoint(T.milestone_dir(tmp_path / "ckpt" / "a", g))
+        Wb, _ = T.load_checkpoint(T.milestone_dir(tmp_path / "ckpt" / "b", g))
+        assert np.array_equal(Wa, Wb), g
+
+
+def test_milestones_cli(tmp_path):
+    T.main(["--run", "cli", "--games", "300", "--milestones", "200,100,1e3",
+            "--checkpoint-root", str(tmp_path / "ckpt"), "--log-root", str(tmp_path / "logs")])
+    meta = json.loads((tmp_path / "ckpt" / "cli" / "meta.json").read_text())
+    assert meta["config"]["milestones"] == [100, 200, 1000]
+    assert sorted(p.name for p in (tmp_path / "ckpt" / "cli" / "milestones").iterdir()) == [
+        "games-0000000100", "games-0000000200"]
+    with pytest.raises(ValueError):
+        T.Config(run="x", games=10, milestones=[0])
 
 
 def test_resume_drops_log_rows_after_checkpoint(tmp_path):

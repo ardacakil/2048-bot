@@ -1,8 +1,10 @@
 """Play 2048 in the terminal on the Numba engine.
 
     uv run python -m game.play [--seed N]
+    uv run python -m game.play --bot RUN [--depth 2] [--delay 0.05] [--seed N]
 
-Arrow keys or WASD to move, r to restart, q to quit.
+Arrow keys or WASD to move, r to restart, q to quit. With --bot, watch the n-tuple
+checkpoint checkpoints/RUN play one game with expectimax; q quits.
 """
 
 import argparse
@@ -91,7 +93,7 @@ def init_colors():
     return True
 
 
-def draw(scr, game, has_color):
+def draw(scr, game, has_color, title="2048", footer=None):
     scr.erase()
     rows, cols = scr.getmaxyx()
     board_w, board_h = 4 * CELL_W + 5, 4 * CELL_H + 5
@@ -101,8 +103,8 @@ def draw(scr, game, has_color):
         return
 
     best = 1 << E.max_tile(game.board)
-    scr.addstr(0, 0, "2048", curses.A_BOLD)
-    scr.addstr(1, 0, f"Score {game.score:<8d} Moves {game.moves:<6d} Best {best}")
+    scr.addstr(0, 0, title, curses.A_BOLD)
+    scr.addstr(1, 0, f"Score {game.score:<8d} Moves {game.moves:<6d} Max tile {best}")
 
     grid = E.decode(game.board)
     top = 3
@@ -121,7 +123,9 @@ def draw(scr, game, has_color):
                 scr.addstr(y + dy, x, text.center(CELL_W), attr)
 
     y = top + board_h
-    if game.over:
+    if footer is not None:
+        scr.addstr(y, 0, footer, curses.A_BOLD if game.over else curses.A_NORMAL)
+    elif game.over:
         scr.addstr(y, 0, "Game over!  r = restart, q = quit", curses.A_BOLD)
     else:
         scr.addstr(y, 0, "arrows/WASD move   r restart   q quit")
@@ -165,10 +169,55 @@ def main(scr, seed):
             game.step(KEYS[key])
 
 
+def bot_main(scr, seed, bot, title, delay):
+    """Watch the bot play one full game; q quits at any time."""
+    curses.curs_set(0)
+    has_color = init_colors()
+    game = Game(seed)
+    game.over = E.is_game_over(game.board)
+    scr.timeout(max(1, int(delay * 1000)))  # getch() doubles as the delay between moves
+    while True:
+        footer = "Game over!  q = quit" if game.over else "bot playing   q quit"
+        draw(scr, game, has_color, title, footer)
+        if game.over:
+            scr.timeout(-1)  # nothing left to animate: wait for q
+        if scr.getch() in (ord("q"), ord("Q")):
+            return game
+        if not game.over:
+            action, _ = bot.best_move(game.board)
+            game.step(action)
+
+
+def load_bot(name, depth):
+    """Expectimax player on a checkpoint: a run name under checkpoints/ or a directory path.
+
+    Weights are memory-mapped copy-on-write, so the checkpoint file is never modified.
+    """
+    from pathlib import Path
+
+    from ntuple.expectimax import Expectimax
+    from ntuple.train import CHECKPOINT_ROOT, load_checkpoint
+
+    ckpt = Path(name) if Path(name).is_dir() else CHECKPOINT_ROOT / name
+    if not (ckpt / "meta.json").exists():
+        raise SystemExit(f"no checkpoint at {ckpt}")
+    W, meta = load_checkpoint(ckpt, mmap=True)
+    return Expectimax(W, depth=depth), f"{ckpt.name} ({meta['games_done']:,} games)"
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Play 2048 in the terminal.")
+    parser = argparse.ArgumentParser(description="Play 2048 in the terminal, or watch the bot.")
     parser.add_argument("--seed", type=int, default=None, help="RNG seed (default: time-based)")
+    parser.add_argument("--bot", metavar="RUN", help="watch a checkpoint play (run name or directory)")
+    parser.add_argument("--depth", type=int, default=2, help="bot expectimax depth (0 = greedy)")
+    parser.add_argument("--delay", type=float, default=0.05, help="bot seconds between moves")
     args = parser.parse_args()
     seed = args.seed if args.seed is not None else time.time_ns() % (2**63)
-    game = curses.wrapper(main, seed)
-    print(f"Final score {game.score} in {game.moves} moves, best tile {1 << E.max_tile(game.board)} (seed {seed})")
+    if args.bot:
+        bot, name = load_bot(args.bot, args.depth)
+        bot.best_move(E.new_game(E.make_rng(0)))  # load compiled code before the screen opens
+        title = f"2048 bot: {name}, expectimax depth {args.depth}"
+        game = curses.wrapper(bot_main, seed, bot, title, args.delay)
+    else:
+        game = curses.wrapper(main, seed)
+    print(f"Final score {game.score} in {game.moves} moves, max tile {1 << E.max_tile(game.board)} (seed {seed})")

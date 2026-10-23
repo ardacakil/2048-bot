@@ -12,6 +12,7 @@ run is a single process on one core; checkpoints go to `checkpoints/<run>/`, log
 - Leave the Terminal windows open. If one gets closed anyway, that run saves a checkpoint
   and exits cleanly; resume it (below).
 - Quit other heavy apps. Three runs use three cores and ~1.2 GB of RAM in total.
+- Free disk: about 5 GB for checkpoints and milestones (62 GB free on 2026-10-24).
 
 ## Overnight: three learning rates in parallel
 
@@ -21,21 +22,21 @@ Open three Terminal windows (Terminal → **Cmd+N**) and paste one block into ea
 
 ```bash
 cd ~/Desktop/2048-bot
-caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a01 --alpha 0.1 --games 20000000 --hours 8 --seed 1
+caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a01 --alpha 0.1 --games 20000000 --hours 8 --seed 1 --checkpoint-every 100000000 --milestones 1000,10000,100000,1000000,5000000
 ```
 
 **Window 2, α = 0.05**
 
 ```bash
 cd ~/Desktop/2048-bot
-caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a005 --alpha 0.05 --games 20000000 --hours 8 --seed 1
+caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a005 --alpha 0.05 --games 20000000 --hours 8 --seed 1 --checkpoint-every 100000000 --milestones 1000,10000,100000,1000000,5000000
 ```
 
 **Window 3, α = 0.025**
 
 ```bash
 cd ~/Desktop/2048-bot
-caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a0025 --alpha 0.025 --games 20000000 --hours 8 --seed 1
+caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a0025 --alpha 0.025 --games 20000000 --hours 8 --seed 1 --checkpoint-every 100000000 --milestones 1000,10000,100000,1000000,5000000
 ```
 
 All three use the same seed, so they differ only in α. Each prints a progress line every
@@ -47,14 +48,34 @@ checkpoint first); 20 M games is a ceiling that will not be reached. Expected: a
 
 ### Checkpoints
 
-Saved every **20,000 games or 20 minutes, whichever comes first**, plus always when a run
-stops, so a crash loses at most 20 minutes. Only the latest checkpoint is kept (256 MB per
-run).
+The commands save a checkpoint **every 20 minutes**, plus always when a run stops, so a
+crash loses at most 20 minutes. Only the latest checkpoint is kept: each save deletes the
+previous weights file, so each run uses 256 MB for its checkpoint however long it trains.
 
-At overnight speeds 20,000 games take only 30–80 seconds, so the game count always
-triggers first: each run writes its 256 MB checkpoint several hundred times (≈300–700 GB of
-SSD writes for all three runs over 8 h). To save purely every 20 minutes instead, add
-`--checkpoint-every 100000000` to each command.
+`--checkpoint-every 100000000` is what makes it purely time-based. Without it the default is
+every 20,000 games *or* 20 minutes, and at overnight speeds 20,000 games take only
+30–80 seconds, so each run would rewrite its 256 MB checkpoint several hundred times
+(≈300–700 GB of SSD writes for all three runs over 8 h). With it: ~24 saves per run, ≈18 GB
+of writes in total.
+
+If the Mac crashes or loses power *while* a checkpoint is being written, the previous
+checkpoint stays valid. The half-written `weights-*.npy.tmp` it leaves behind is deleted
+automatically by the next save (e.g. when you resume).
+
+### Milestones
+
+`--milestones 1000,10000,100000,1000000,5000000` saves a permanent copy of the weights at
+exactly those game counts, in `checkpoints/<run>/milestones/games-<count>/`. Unlike the
+regular checkpoint these are never deleted. Each milestone is a complete checkpoint, so it
+can be evaluated, watched (`game.play --bot`) or resumed from like any other.
+
+- Per run: 5 × 256 MB ≈ 1.3 GB, so ≈ 3.8 GB for all three runs (plus 3 × 256 MB for the
+  latest checkpoints).
+- Expected timing with 3 runs in parallel: 1k/10k/100k within the first ~2 minutes, 1 M after
+  ~0.5 h, 5 M after ~3.5–4 h. 5 M is reached unless the runs are much slower than measured.
+- Milestones are part of the run's settings: a resumed run keeps saving the ones it has not
+  reached yet. If a run is resumed from a checkpoint older than a milestone it already
+  saved, that milestone is rewritten with identical weights.
 
 ## Stop a run early
 
@@ -100,6 +121,14 @@ the original target.
   ```bash
   ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 1000 --depth 0
   ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 200 --depth 2
+  ```
+
+- Evaluate or watch a milestone (pass its directory):
+
+  ```bash
+  ls checkpoints/overnight-a01/milestones/
+  ~/.local/bin/uv run python -m ntuple.evaluate --checkpoint checkpoints/overnight-a01/milestones/games-0001000000 --games 1000 --depth 0
+  ~/.local/bin/uv run python -m game.play --bot checkpoints/overnight-a01/milestones/games-0001000000 --depth 2
   ```
 
 ## Measurements behind these numbers (M4, 2026-10-23)

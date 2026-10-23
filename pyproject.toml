@@ -33,3 +33,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests write real 256 MB checkpoints: keep temp dirs only for failing tests
+tmp_path_retention_policy = "failed"
