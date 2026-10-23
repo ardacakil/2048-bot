@@ -1,0 +1,35 @@
+[project]
+name = "2048-bot"
+version = "0.1.0"
+description = "Self-trained 2048 bot: n-tuple network (TD learning) vs DQN"
+readme = "README.md"
+authors = [
+    { name = "ardacakil", email = "ardacakil4@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "numba",
+    "matplotlib",
+    "pandas",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# src/ holds several top-level packages: `import game`, `import ntuple`, `import dqn`
+module-name = ["game", "ntuple", "dqn"]
+module-root = "src"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ipykernel",
+    "ipywidgets",
+    "jupyter",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

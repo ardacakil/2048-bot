@@ -1,0 +1,25 @@
+# Python environment and build files
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Numba cache
+*.nbi
+*.nbc
+
+# Jupyter and pytest
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Training outputs (large files, never commit)
+checkpoints/
+logs/
+*.pth
+*.pt
+
+# Secrets and OS files
+.env
+.DS_Store
