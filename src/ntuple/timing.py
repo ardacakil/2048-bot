@@ -54,24 +54,59 @@ class Timing:
         return self.compute_s / self.moves * 1e3 if self.moves else 0.0
 
 
+@dataclasses.dataclass(frozen=True)
+class Move:
+    action: int
+    reward: int
+    spawn_cell: int
+    spawn_exp: int
+    board: int  # after the move and its spawn
+    compute_s: float  # wall time of the best_move call
+
+
+def start(seed, start_board=None):
+    """(rng, board, spawns) for game `seed`; spawns = the two initial tiles as (cell, exponent),
+    drawn exactly like engine.new_game. With start_board the game continues from that board
+    (no initial spawns)."""
+    rng = E.make_rng(seed)
+    if start_board is not None:
+        return rng, int(start_board), []
+    first = E.spawn_tile(E.ZERO, rng)
+    board = E.spawn_tile(first, rng)
+    return rng, int(board), [tuple(map(int, E.spawned_cell(E.ZERO, first))),
+                             tuple(map(int, E.spawned_cell(first, board)))]
+
+
+def moves_until(bot, rng, board, target, max_moves=None):
+    """Yield one Move per move of `bot.best_move` until `target` first appears, no move is legal,
+    or max_moves moves were played. The transposition table is emptied first, so the game depends
+    only on the seed (the same game as in the evaluation with the same settings)."""
+    bot.table[1][:] = X.NO_ENTRY
+    n = 0
+    while not E.has_tile(board, target) and (max_moves is None or n < max_moves):
+        t0 = time.perf_counter()
+        action, _ = bot.best_move(board)
+        compute = time.perf_counter() - t0
+        if action < 0:
+            return
+        after, reward = E.move(board, action)
+        board = int(E.spawn_tile(after, rng))
+        cell, exp = E.spawned_cell(after, board)
+        n += 1
+        yield Move(int(action), int(reward), int(cell), int(exp), board, compute)
+
+
 def play_until(bot, seed, target, delay=0.0, sleep=False, start_board=None):
     """Play one game with `bot.best_move` until `target` first appears or no move is legal."""
-    bot.table[1][:] = X.NO_ENTRY  # empty transposition table: the game depends only on the seed
-    rng = E.make_rng(seed)
-    board = E.new_game(rng) if start_board is None else start_board
+    rng, board, _ = start(seed, start_board)
     moves = score = 0
     compute = 0.0
     t_start = time.perf_counter()
-    while not E.has_tile(board, target):
-        t0 = time.perf_counter()
-        action, _ = bot.best_move(board)
-        compute += time.perf_counter() - t0
-        if action < 0:
-            break
-        after, reward = E.move(board, action)
-        board = E.spawn_tile(after, rng)
-        score += int(reward)
+    for m in moves_until(bot, rng, board, target):
+        compute += m.compute_s
+        score += m.reward
         moves += 1
+        board = m.board
         if sleep:
             time.sleep(delay)
     return Timing(seed, target, E.has_tile(board, target), moves, compute, time.perf_counter() - t_start,

@@ -95,3 +95,29 @@ def test_cli(ckpt_root, capsys):
     TI.main(["--bot", str(ckpt_root / "runx"), "--depth", "1", "--games", "2", "--targets", "64:0.01,128:0.02"])
     out = capsys.readouterr().out
     assert "target 64" in out and "target 128" in out and "warm-up" in out and "peak memory" in out
+
+
+def test_start_draws_like_new_game():
+    for seed in range(5):
+        rng, board, spawns = TI.start(seed)
+        assert board == E.new_game(E.make_rng(seed)) and len(spawns) == 2
+        rebuilt = 0
+        for cell, exp in spawns:
+            rebuilt |= exp << (4 * cell)
+        assert rebuilt == board
+    _, board, spawns = TI.start(1, start_board=E.from_values([[2, 0, 0, 0], Z, Z, Z]))
+    assert spawns == [] and board == E.from_values([[2, 0, 0, 0], Z, Z, Z])
+
+
+def test_moves_until_yields_each_move_and_honours_max_moves(W_eval):
+    bot = X.Expectimax(W_eval, depth=1, prune=1e-4, tt_bits=18)
+    rng, board, _ = TI.start(4)
+    moves = list(TI.moves_until(bot, rng, board, 1 << 15))
+    prev = board
+    for m in moves:
+        after, reward = E.move(prev, m.action)
+        assert reward == m.reward and E.spawned_cell(after, m.board) == (m.spawn_cell, m.spawn_exp)
+        prev = m.board
+    assert E.is_game_over(prev)
+    rng, board, _ = TI.start(4)
+    assert len(list(TI.moves_until(bot, rng, board, 1 << 15, max_moves=10))) == 10

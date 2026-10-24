@@ -10,11 +10,27 @@ animate.
 **With expectimax depth 2 search, the bot averages 320.8k points and reaches 16384 in 90.5% of games at 0.124 ms per move** on one CPU core (3,000 games). Expectimax depth 3 does better on a preliminary 300 games: 333.3k average, 16384 in 92.7%, at 1.874 ms per move. Without any search (greedy), it averages 211.5k and reaches 16384 in 48.3% of games at 0.22 µs per move.
 <!-- headline:end -->
 
-## Demo
+## Live demo / Server
 
-**Live demo: coming in phase 4/5** (a server that plays games and streams them to a browser that
-replays them with animations). Until then you can watch the bot in the terminal (see
-[Reproduce](#reproduce)); the replay files it will stream are already in
+**Live demo: coming soon at 2048.ardacakil.com** (phase 5: the browser frontend). The server side
+(phase 4) is built: pick a target tile (2048, 4096, 8192 or 16384), and a small VPS plays a **new**
+game with the trained network and depth-2 expectimax, streaming every move to the browser, which
+replays it until the target first appears.
+
+- **Honest games.** Every game gets a fresh random seed, sent along with the stream so anyone can
+  replay it exactly (`python -m ntuple.timing --base-seed SEED`). No cherry-picking: if the bot
+  dies before the target, the stream says so, together with how often this policy reaches that
+  target in the evaluation.
+- **Streamed as computed, paced by the browser.** The server computes about 1,700 moves per second
+  on one vCPU and sends them in batches; the browser plays them back at 5 to 20 ms per move. One
+  game computes at a time, others wait in a short queue with their position shown.
+- **API.** `GET /api/play/{target}` (Server-Sent Events: meta, queued, init, steps, end),
+  `GET /api/health`, `GET /api/stats`. Code in [`src/server/`](src/server/), deployment
+  (systemd, nginx, Cloudflare) in [`deploy/`](deploy/README.md).
+
+Until the frontend exists, watch a live game in the terminal:
+`uv run python -m server.watch --url http://127.0.0.1:8200 --target 8192` (with the server
+running locally, see [Reproduce](#reproduce)). Recorded replays are in
 [`results/replays/`](results/replays/).
 
 ![Largest tile reached by each policy](figures/eval_max_tile_overnight-a0025.png)
@@ -147,6 +163,10 @@ caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a0025 -
 
 # figures: run notebooks/05_showcase.ipynb; then refresh the numbers in this README
 ~/.local/bin/uv run python -m analysis.readme
+
+# live API locally, and a terminal viewer for it
+~/.local/bin/uv run uvicorn --factory server.app:create_app --reload --port 8200
+~/.local/bin/uv run python -m server.watch --url http://127.0.0.1:8200 --target 2048
 ```
 
 ## Repository structure
@@ -155,6 +175,8 @@ caffeinate -i ~/.local/bin/uv run python -m ntuple.train --run overnight-a0025 -
 src/game/         bitboard engine, terminal player, replay format (replay.py)
 src/ntuple/       n-tuple network, TD training, expectimax, player, evaluation, replays
 src/analysis/     learning curves, statistics, evaluation report, README generator
+src/server/       live API: FastAPI app, compute thread, queue, SSE wire format, terminal viewer
+deploy/           systemd unit, nginx site, deploy script, VPS checklist
 notebooks/        02_ntuple (training), 05_showcase (curves, evaluation, replays)
 tests/            pytest suite
 results/          eval_summary.csv, summary.json, replays/ (per-game CSVs in eval/)
@@ -164,8 +186,7 @@ TRAINING.md       how the overnight runs were set up
 
 ## Roadmap
 
-- **Phase 4, server:** a FastAPI service that plays games with the main model and streams moves
-  and tile spawns over Server-Sent Events, in the same format as the replay files.
+- **Phase 4, server:** built (see [Live demo / Server](#live-demo--server)); deployment to the VPS next.
 - **Phase 5, web frontend:** a browser client that replays streamed games with animations.
 - **Improvements:** temporal-coherence learning or α decay; multi-stage networks to get past the
   32768 wall; the DQN comparison (phase 3, deferred).

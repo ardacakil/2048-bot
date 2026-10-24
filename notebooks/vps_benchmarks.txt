@@ -1,0 +1,53 @@
+target 2048  (delay 20 ms/move)
+    seed  reached    moves  compute s   ms/move  playback s
+       0      yes    1,177       0.84     0.718        23.5
+       1      yes    1,180       0.72     0.614        23.6
+       2      yes    1,185       0.68     0.577        23.7
+       3      yes    1,178       0.69     0.586        23.6
+       4      yes    1,173       0.78     0.665        23.5
+  games 5, reached 100%
+  moves      min/median/max  1,173 / 1,178 / 1,185
+  compute s  median/max      0.72 / 0.84
+  compute    0.632 ms/move (all games)
+  playback s median/max      23.6 / 23.7   (moves x delay)
+
+target 4096  (delay 20 ms/move)
+    seed  reached    moves  compute s   ms/move  playback s
+       0      yes    1,876       1.12     0.598        37.5
+       1      yes    1,886       1.08     0.575        37.7
+       2      yes    1,887       1.06     0.561        37.7
+       3      yes    1,887       1.05     0.558        37.7
+       4      yes    1,882       1.16     0.617        37.6
+  games 5, reached 100%
+  moves      min/median/max  1,876 / 1,886 / 1,887
+  compute s  median/max      1.08 / 1.16
+  compute    0.582 ms/move (all games)
+  playback s median/max      37.7 / 37.7   (moves x delay)
+
+target 8192  (delay 10 ms/move)
+    seed  reached    moves  compute s   ms/move  playback s
+       0      yes    3,745       2.24     0.597        37.5
+       1      yes    3,740       2.05     0.549        37.4
+       2      yes    3,735       2.05     0.549        37.4
+       3      yes    3,731       2.07     0.556        37.3
+       4      yes    3,740       2.27     0.607        37.4
+  games 5, reached 100%
+  moves      min/median/max  3,731 / 3,740 / 3,745
+  compute s  median/max      2.07 / 2.27
+  compute    0.572 ms/move (all games)
+  playback s median/max      37.4 / 37.5   (moves x delay)
+
+target 16384  (delay 5 ms/move)
+    seed  reached    moves  compute s   ms/move  playback s
+       0      yes    7,489       4.12     0.550        37.4
+       1      yes    7,454       4.00     0.537        37.3
+       2      yes    7,468       4.08     0.547        37.3
+       3      yes    7,437       3.85     0.518        37.2
+       4      yes    7,451       4.10     0.550        37.3
+  games 5, reached 100%
+  moves      min/median/max  7,437 / 7,454 / 7,489
+  compute s  median/max      4.08 / 4.12
+  compute    0.540 ms/move (all games)
+  playback s median/max      37.3 / 37.4   (moves x delay)
+
+peak memory 518 MB

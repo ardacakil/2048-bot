@@ -1,0 +1,41 @@
+# /etc/systemd/system/bot2048.service: live 2048 bot API (see deploy/README.md)
+[Unit]
+Description=2048 bot live API (uvicorn, 1 worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot2048
+Group=bot2048
+WorkingDirectory=/opt/2048-bot
+EnvironmentFile=/etc/bot2048.env
+Environment=PYTHONPATH=src
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+# Numba writes its compiled-code cache here; systemd creates /var/cache/bot2048 owned by bot2048
+Environment=NUMBA_CACHE_DIR=/var/cache/bot2048
+CacheDirectory=bot2048
+ExecStart=/opt/2048-bot/.venv/bin/uvicorn --factory server.app:create_app --host ${BOT2048_HOST} --port ${BOT2048_PORT} --workers 1 --no-access-log --log-level ${BOT2048_LOG_LEVEL}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+# share the single vCPU politely with the other services, and cap memory (measured peak ~520 MB)
+Nice=10
+CPUWeight=20
+MemoryMax=800M
+
+# hardening: read-only system and repo, no home directories, private /tmp
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

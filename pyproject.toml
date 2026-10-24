@@ -7,11 +7,10 @@ authors = [
     { name = "ardacakil", email = "ardacakil4@gmail.com" }
 ]
 requires-python = ">=3.12"
+# the engine, network, search and server need only these; see [dependency-groups] for the rest
 dependencies = [
     "numpy",
     "numba",
-    "matplotlib",
-    "pandas",
 ]
 
 [build-system]
@@ -19,8 +18,9 @@ requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# src/ holds several top-level packages: `import game`, `import ntuple`, `import dqn`, `import analysis`
-module-name = ["game", "ntuple", "dqn", "analysis"]
+# src/ holds several top-level packages: `import game`, `import ntuple`, `import dqn`, `import analysis`,
+# `import server`
+module-name = ["game", "ntuple", "dqn", "analysis", "server"]
 module-root = "src"
 
 [dependency-groups]
@@ -29,7 +29,23 @@ dev = [
     "ipykernel",
     "ipywidgets",
     "jupyter",
+    "httpx",
 ]
+# notebooks, figures, evaluation summaries (src/analysis)
+analysis = [
+    "matplotlib",
+    "pandas",
+]
+# the live API (src/server); the VPS installs only numpy, numba and this group, pinned in
+# deploy/requirements-server.txt (uv export --no-default-groups --group server ...)
+server = [
+    "fastapi",
+    "uvicorn",
+]
+
+[tool.uv]
+# on the Mac everything is installed, as before
+default-groups = ["dev", "analysis", "server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
