@@ -18,6 +18,7 @@ every plot with games on the x-axis.
 import functools
 from pathlib import Path
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -159,11 +160,20 @@ def format_summary(table):
 
 
 def _styled(fn):
-    """Build the figure under the shared rcParams (fonts, colours, grid)."""
+    """Build the figure under the shared rcParams (fonts, colours, grid).
+
+    Only the RC keys are saved and restored. plt.rc_context would restore every rcParam, and the
+    first figure of a notebook kernel resolves the inline backend, which turns interactive mode
+    on; rolling that back stops every later figure from being displayed.
+    """
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        with plt.rc_context(RC):
+        old = {key: matplotlib.rcParams[key] for key in RC}
+        matplotlib.rcParams.update(RC)
+        try:
             return fn(*args, **kwargs)
+        finally:
+            matplotlib.rcParams.update(old)
     return wrapper
 
 

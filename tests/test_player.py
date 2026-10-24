@@ -129,3 +129,52 @@ def test_labels_round_trip():
     assert P.parse_label("d3") == ("expectimax", 3)
     with pytest.raises(ValueError):
         P.parse_label("expectimax")
+
+
+def reference_corner_counts(boards):
+    """Plain-Python corner metric over boards[0] (start) .. boards[n] (after move n)."""
+    def corner(b):
+        cells = E.decode(int(b)).ravel()
+        tops = [c for c in (0, 3, 12, 15) if cells[c] == cells.max()]
+        return tops[0] if tops else -1
+    in_corner = stable = 0
+    prev = corner(boards[0])
+    for b in boards[1:]:
+        c = corner(b)
+        in_corner += c >= 0
+        stable += c >= 0 and c == prev
+        prev = c
+    return in_corner, stable
+
+
+def test_reference_corner_counts_on_a_hand_built_game():
+    V = E.from_values
+    z = [0] * 4
+    boards = [V([[64, 2, 0, 0], z, z, z]),      # start: 64 in corner 0
+              V([[64, 2, 2, 0], z, z, z]),      # 1: corner 0, same corner     -> corner, stable
+              V([[0, 0, 4, 64], z, z, z]),      # 2: corner 3, moved           -> corner
+              V([[0, 0, 4, 64], z, z, [2, 0, 0, 0]]),  # 3: still corner 3     -> corner, stable
+              V([[0, 0, 4, 0], [0, 0, 0, 64], z, z]),  # 4: off the corner     -> -
+              V([[0, 0, 4, 0], z, z, [2, 0, 0, 128]])]  # 5: corner 15, new    -> corner
+    assert reference_corner_counts(boards) == (4, 2)
+
+
+@pytest.mark.parametrize("policy, depth", [("random", 0), ("greedy", 0), ("expectimax", 1)])
+def test_corner_fractions_match_reference(W_eval, policy, depth):
+    player = P.Player(W_eval, policy, depth)
+    for seed in range(3):
+        rec = player.play(seed)
+        corner, stable = reference_corner_counts(R.trajectory(rec.init, rec.actions, rec.spawns))
+        assert rec.corner_frac == corner / rec.moves and rec.corner_stable_frac == stable / rec.moves
+        assert 0 <= rec.corner_stable_frac <= rec.corner_frac <= 1
+
+
+def test_corner_fractions_from_a_start_board(W_eval):
+    start = E.from_values([[256, 128, 64, 32], [0, 0, 0, 8], [0, 0, 2, 0], [0, 0, 0, 0]])
+    rec = P.Player(W_eval, "greedy").play(1, start_board=start, max_moves=5)
+    boards = [start]
+    for a, (cell, exp) in zip(rec.actions, rec.spawns):
+        boards.append(int(E.move(boards[-1], int(a))[0]) | (int(exp) << (4 * int(cell))))
+    corner, stable = reference_corner_counts(boards)
+    assert (rec.corner_frac, rec.corner_stable_frac) == (corner / 5, stable / 5)
+    assert P.Player(W_eval, "greedy").play(1, max_moves=0).corner_frac == 0.0

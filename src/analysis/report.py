@@ -105,10 +105,7 @@ def policy_name(policy, depth):
 @C._styled
 def plot_max_tile_distribution(table, run, checkpoint="final", include_random=True):
     """100% stacked bars: share of games per max tile, one bar per policy."""
-    t = table[(table["run"] == run) & (table["checkpoint"] == checkpoint)]
-    if include_random:
-        t = pd.concat([table[table["policy"] == "random"], t])
-    t = t.sort_values(["policy", "depth"], key=lambda s: s.map(_policy_order) if s.name == "policy" else s)
+    t = policy_rows(table, run, checkpoint, include_random)
     labels = [policy_name(p, d) for p, d in zip(t["policy"], t["depth"])]
     fig, ax = plt.subplots(figsize=(10, 0.6 * len(t) + 1.6))
     ax.grid(False)
@@ -143,8 +140,7 @@ def _policy_order(policy):
 @C._styled
 def plot_strength_vs_cost(table, run, checkpoint="final"):
     """Mean score (95% CI) against ms/move per policy; ms/move from --bench when available."""
-    t = table[(table["run"] == run) & (table["checkpoint"] == checkpoint)]
-    t = t.sort_values(["policy", "depth"], key=lambda s: s.map(_policy_order) if s.name == "policy" else s)
+    t = policy_rows(table, run, checkpoint, include_random=False)
     bench = "ms_per_move_bench" in t and t["ms_per_move_bench"].notna().all()
     x = t["ms_per_move_bench" if bench else "ms_per_move"].to_numpy(np.float64)
     y = t["mean_score"].to_numpy(np.float64)
@@ -165,6 +161,171 @@ def plot_strength_vs_cost(table, run, checkpoint="final"):
     ax.set_title(f"{run} · {checkpoint} checkpoint · 95% CIs")
     C._title(fig, "Strength vs search cost")
     return fig
+
+
+def policy_rows(table, run, checkpoint="final", include_random=True):
+    """Summary rows for one checkpoint in policy order (random, greedy, d1, d2, ...)."""
+    t = table[(table["run"] == run) & (table["checkpoint"] == checkpoint)]
+    if include_random:
+        t = pd.concat([table[table["policy"] == "random"], t])
+    return t.sort_values(["policy", "depth"], key=lambda s: s.map(_policy_order) if s.name == "policy" else s)
+
+
+def best_expectimax(table, run, checkpoint="final"):
+    """Label of the expectimax policy with the highest mean score on this checkpoint (None if none)."""
+    t = table[(table["run"] == run) & (table["checkpoint"] == checkpoint) & (table["policy"] == "expectimax")]
+    return None if t.empty else V.policy_label("expectimax", int(t.loc[t["mean_score"].idxmax(), "depth"]))
+
+
+def _games_of(results, run, label, checkpoint="final"):
+    from ntuple.player import parse_label
+
+    policy, depth = parse_label(label)
+    sel = (results["policy"] == policy) & (results["depth"] == depth)
+    if policy != "random":
+        sel &= (results["run"] == run) & (results["checkpoint"] == checkpoint)
+    return results[sel]
+
+
+@C._styled
+def plot_distributions(results, run, col="score", labels=None, checkpoint="final", bin_width=None):
+    """Small multiples, one histogram per policy on a shared x-axis (no colour coding needed)."""
+    labels = labels or [l for l in ("greedy", "expectimax-d1", "expectimax-d2", "expectimax-d3")
+                        if len(_games_of(results, run, l, checkpoint))]
+    data = {l: _games_of(results, run, l, checkpoint)[col].to_numpy() for l in labels}
+    hi = max(v.max() for v in data.values())
+    bin_width = bin_width or (10_000 if col == "score" else 500)
+    bins = np.arange(0, hi + bin_width, bin_width)
+    fig, axes = plt.subplots(len(labels), 1, figsize=(10, 1.5 * len(labels) + 1.4), sharex=True,
+                             sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, label in zip(axes, labels):
+        v = data[label]
+        w = np.full(len(v), 100 / len(v))
+        ax.hist(v, bins=bins, weights=w, color=C.SERIES_COLORS[0], edgecolor=C.SURFACE, linewidth=0.5,
+                gid=f"hist:{label}")
+        med = np.median(v)
+        ax.axvline(med, color=C.INK_2, lw=1, gid=f"median:{label}")
+        ax.text(med, 0.95, f" median {C.format_count(round(med, -2 if med < 1e5 else -3))}",
+                transform=ax.get_xaxis_transform(), color=C.INK_2, fontsize=8, va="top")
+        ax.set_title(f"{label} · {len(v):,} games", color=C.INK, fontsize=9, pad=4)
+        ax.set_ylabel("% of games")
+    axes[-1].xaxis.set_major_formatter(FuncFormatter(C.format_count))
+    axes[-1].set_xlabel("score" if col == "score" else "moves per game")
+    what = "Score" if col == "score" else "Game length"
+    C._title(fig, f"{what} distribution by policy ({run}, {checkpoint} checkpoint)")
+    return fig
+
+
+@C._styled
+def plot_max_tile_heatmap(results, run, labels=None, checkpoint="final"):
+    """Share of games whose largest tile ends on each cell (final board), one 4x4 grid per policy."""
+    from matplotlib.colors import LinearSegmentedColormap
+
+    labels = labels or ["greedy", best_expectimax(summary_of(results), run, checkpoint)]
+    cmap = LinearSegmentedColormap.from_list("seq", ["#f0efec", "#9ec5f4", "#3987e5", "#1c5cab", "#0d366b"])
+    fig, axes = plt.subplots(1, len(labels), figsize=(4.2 * len(labels) + 0.6, 5.2))
+    axes = np.atleast_1d(axes)
+    for ax, label in zip(axes, labels):
+        pos = _games_of(results, run, label, checkpoint)["max_tile_pos"].to_numpy()
+        grid = np.bincount(pos, minlength=16).reshape(4, 4) / len(pos) * 100
+        ax.imshow(grid, cmap=cmap, vmin=0, vmax=max(30, grid.max()), gid=f"heatmap:{label}")
+        for (r, c), v in np.ndenumerate(grid):
+            ax.text(c, r, f"{v:.1f}%", ha="center", va="center", fontsize=9,
+                    color="#ffffff" if v > 15 else C.INK)
+        ax.set_xticks([]), ax.set_yticks([])
+        ax.grid(False)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.set_title(f"{label} · {len(pos):,} games", color=C.INK, fontsize=10)
+    C._title(fig, f"Where the largest tile ends (final board, {run})")
+    fig.supxlabel("The weights are shared across all 8 rotations/reflections, so no corner is preferred:\n"
+                  "a roughly even spread over the 4 corners is expected. Ties prefer a corner, then the "
+                  "lowest cell index.", fontsize=8, color=C.INK_2, x=0.02, ha="left")
+    return fig
+
+
+def summary_of(results):
+    return S.summarize_results(results)
+
+
+@C._styled
+def plot_corner_frac(table, run, checkpoint="final"):
+    """Per-move corner metrics by policy, 95% CIs over games."""
+    t = policy_rows(table, run, checkpoint)
+    labels = [policy_name(p, d) for p, d in zip(t["policy"], t["depth"])]
+    y = np.arange(len(t))[::-1]
+    fig, ax = plt.subplots(figsize=(9, 0.7 * len(t) + 1.8))
+    ax.grid(axis="y", visible=False)
+    h = 0.36
+    for k, (col, name) in enumerate((("corner_frac", "largest tile in a corner"),
+                                     ("corner_stable_frac", "... in the same corner as the move before"))):
+        v = 100 * t[col].to_numpy()
+        err = 100 * np.vstack([t[col] - t[f"{col}_lo"], t[f"{col}_hi"] - t[col]])
+        yy = y + (h / 2 if k == 0 else -h / 2)
+        ax.barh(yy, v, height=h - 0.04, color=C.SERIES_COLORS[k], label=name, gid=f"bar:{col}")
+        ax.errorbar(v, yy, xerr=err, fmt="none", ecolor=C.INK_2, elinewidth=0.8, capsize=2)
+        for vi, yi in zip(v, yy):
+            ax.text(vi + 1, yi, f"{vi:.0f}%", va="center", fontsize=8, color=C.INK_2)
+    ax.set_yticks(y, labels)
+    ax.tick_params(axis="y", length=0, labelcolor=C.INK_2)
+    ax.set_xlim(0, 105)
+    ax.set_xlabel("% of moves (mean over games)")
+    ax.set_title(f"{run} · {checkpoint} checkpoint · 95% CIs")
+    C._title(fig, "How often the largest tile sits in a corner")
+    fig.legend(loc="outside lower center", ncols=2, fontsize=8)
+    return fig
+
+
+# ---------------------------------------------------------------- headline numbers
+
+
+def headline(run, checkpoint="final", eval_root=V.EVAL_ROOT, ckpt_root=None, log_root=None):
+    """Headline numbers for README/summary.json: the run's training, every policy evaluated on its
+    checkpoint (plus random), the best policy by mean score and 32768 counts."""
+    import json
+
+    from ntuple.train import CHECKPOINT_ROOT, LOG_ROOT
+
+    table = summary(eval_root)
+    meta = json.loads((Path(ckpt_root or CHECKPOINT_ROOT) / run / "meta.json").read_text())
+    rows = policy_rows(table, run, checkpoint)
+
+    def entry(r):
+        e = {"games": int(r["games"]), "mean_score": r["mean_score"], "mean_lo": r["mean_lo"],
+             "mean_hi": r["mean_hi"], "median_score": r["median_score"], "max_score": int(r["max_score"]),
+             "reach": {str(t): {"pct": r[f"reach_{t}"], "lo": r[f"reach_{t}_lo"], "hi": r[f"reach_{t}_hi"]}
+                       for t in S.REACH_TILES},
+             "count_32768": int(r["count_32768"]), "corner_frac": r["corner_frac"],
+             "corner_stable_frac": r["corner_stable_frac"], "mean_moves": r["mean_moves"],
+             "ms_per_move_parallel": r["ms_per_move"]}
+        if "ms_per_move_bench" in r and pd.notna(r["ms_per_move_bench"]):
+            e["ms_per_move_bench"] = r["ms_per_move_bench"]
+        return e
+
+    policies = {policy_name(r["policy"], r["depth"]): entry(r) for _, r in rows.iterrows()}
+    best = max((k for k in policies if k != "random"), key=lambda k: policies[k]["mean_score"])
+    log = C.load_runs([run], log_root or LOG_ROOT)[run]
+    return {
+        "main_run": run, "checkpoint": checkpoint,
+        "alpha": float(log["alpha"].iloc[-1]),
+        "games_trained": int(meta["games_done"]), "moves_trained": int(meta["total_moves"]),
+        "training_hours": float(meta["elapsed_s"]) / 3600,
+        "best_policy": best, "best": policies[best], "policies": policies,
+        "count_32768_total": sum(p["count_32768"] for p in policies.values()),
+        "games_evaluated_total": sum(p["games"] for p in policies.values()),
+        "hardware": "MacBook Pro, Apple M4 (4 performance + 6 efficiency cores), 16 GB",
+    }
+
+
+def write_headline(run, path=None, eval_root=V.EVAL_ROOT, **kw):
+    """Write results/summary.json (next to eval_root by default)."""
+    import json
+
+    path = Path(path) if path else Path(eval_root).parent / "summary.json"
+    data = headline(run, eval_root=eval_root, **kw)
+    path.write_text(json.dumps(data, indent=1, default=float) + "\n")
+    return path
 
 
 # ---------------------------------------------------------------- replays in the notebook

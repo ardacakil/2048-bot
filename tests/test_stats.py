@@ -10,6 +10,7 @@ def rows(scores, tiles, seeds=None, corner=True, **fixed):
     base = {"run": "r", "checkpoint": "final", "games_trained": 1000, "policy": "greedy", "depth": 0}
     return pd.DataFrame({**base, **fixed, "seed": seeds if seeds is not None else np.arange(n),
                          "score": scores, "max_tile": tiles, "max_tile_in_corner": corner,
+                         "corner_frac": 0.5, "corner_stable_frac": 0.25,
                          "moves": 100, "wall_s": 0.5, "n_workers": 8})
 
 
@@ -58,6 +59,7 @@ def test_summarize():
     assert s["max_tile_32768"] == 12.5 and s["max_tile_65536"] == 12.5
     assert sum(s[f"max_tile_{S.bin_name(b)}"] for b in S.MAX_TILE_BINS) == pytest.approx(100)
     assert s["corner_pct"] == 75 and s["ms_per_move"] == pytest.approx(5.0)
+    assert s["corner_frac"] == 0.5 and s["corner_stable_frac"] == 0.25
 
 
 def test_summarize_results_groups_and_merges_bench():

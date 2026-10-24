@@ -63,10 +63,13 @@ def summarize(df):
     for t in REACH_TILES:
         p, plo, phi = wilson_ci(int((df["max_tile"] >= t).sum()), n)
         out.update({f"reach_{t}": 100 * p, f"reach_{t}_lo": 100 * plo, f"reach_{t}_hi": 100 * phi})
+    out["count_32768"] = int((df["max_tile"] >= 32768).sum())
     bins = df["max_tile"].map(max_tile_bin).value_counts()
     for b in MAX_TILE_BINS:
         out[f"max_tile_{bin_name(b)}"] = 100 * bins.get(b, 0) / n
-    out["corner_pct"] = 100 * df["max_tile_in_corner"].astype(bool).mean()
+    out["corner_pct"] = 100 * df["max_tile_in_corner"].astype(bool).mean()  # final board only
+    for col in ("corner_frac", "corner_stable_frac"):  # per-move shares, averaged over games
+        out[col], out[f"{col}_lo"], out[f"{col}_hi"] = mean_ci(df[col])
     out["mean_moves"] = df["moves"].mean()
     out["ms_per_move"] = df["wall_s"].sum() / max(1, df["moves"].sum()) * 1e3  # parallel, per worker
     out["n_workers"] = int(df["n_workers"].max())

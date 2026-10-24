@@ -26,7 +26,8 @@ def fake_rows(run, checkpoint, games_trained, policy, depth, n, seed=0, shift=0)
     return V.typed(pd.DataFrame({
         "run": run, "checkpoint": checkpoint, "games_trained": games_trained, "policy": policy,
         "depth": depth, "seed": np.arange(n), "score": (tiles * 12 + rng.integers(0, 5000, n) + shift),
-        "max_tile": tiles, "max_tile_pos": 0, "max_tile_in_corner": True, "moves": 5000,
+        "max_tile": tiles, "max_tile_pos": 0, "max_tile_in_corner": True,
+        "corner_frac": rng.uniform(0.5, 0.9, n), "corner_stable_frac": rng.uniform(0.3, 0.5, n), "moves": 5000,
         "wall_s": 1.0, "ms_per_move": 0.2, "final_board": "0x" + "0" * 16, "n_workers": 8,
         "prune": 1e-4 if policy == "expectimax" else 0.0, "tt_bits": 20 if policy == "expectimax" else 0}))
 
@@ -92,3 +93,84 @@ def test_strength_vs_cost_prefers_bench_timing(table):
     t = table.assign(ms_per_move_bench=table["ms_per_move"] / 2)
     ax = RE.plot_strength_vs_cost(t, "overnight-a005").axes[0]
     assert "single process" in ax.get_xlabel() and ax.get_xscale() == "log"
+
+
+@pytest.fixture
+def results():
+    parts = [fake_rows("-", "-", 0, "random", 0, 50)]
+    parts.append(fake_rows("overnight-a005", "final", 12_900_000, "greedy", 0, 300, seed=3))
+    for d in (1, 2):
+        parts.append(fake_rows("overnight-a005", "final", 12_900_000, "expectimax", d, 200, seed=d,
+                               shift=20_000 * d))
+    df = pd.concat(parts, ignore_index=True)
+    df["max_tile_pos"] = np.random.default_rng(0).choice([0, 3, 12, 15, 5], len(df))
+    return df
+
+
+def test_best_expectimax_and_policy_rows(results):
+    t = S.summarize_results(results)
+    assert RE.best_expectimax(t, "overnight-a005") == "expectimax-d2"
+    assert RE.best_expectimax(t, "nope") is None
+    rows = RE.policy_rows(t, "overnight-a005")
+    assert [RE.policy_name(p, d) for p, d in zip(rows["policy"], rows["depth"])] == \
+        ["random", "greedy", "expectimax-d1", "expectimax-d2"]
+
+
+@pytest.mark.parametrize("col", ["score", "moves"])
+def test_distributions_one_panel_per_policy(results, col):
+    fig = RE.plot_distributions(results, "overnight-a005", col)
+    assert [ax.get_title(loc="left").split(" ·")[0] for ax in fig.axes] == \
+        ["greedy", "expectimax-d1", "expectimax-d2"]
+    for ax in fig.axes:
+        heights = sum(p.get_height() for p in ax.patches)
+        assert heights == pytest.approx(100)  # % of games per panel
+
+
+def test_max_tile_heatmap_shares(results):
+    fig = RE.plot_max_tile_heatmap(results, "overnight-a005", ["greedy", "expectimax-d2"])
+    assert len(fig.axes) == 2
+    for ax, label in zip(fig.axes, ["greedy", "expectimax-d2"]):
+        grid = ax.get_images()[0].get_array()
+        assert grid.shape == (4, 4) and grid.sum() == pytest.approx(100)
+        pos = RE._games_of(results, "overnight-a005", label)["max_tile_pos"]
+        assert grid[0, 0] == pytest.approx(100 * (pos == 0).mean())
+    assert "no corner is preferred" in fig._supxlabel.get_text()
+
+
+def test_corner_frac_figure(results):
+    t = S.summarize_results(results)
+    ax = RE.plot_corner_frac(t, "overnight-a005").axes[0]
+    bars = [p for p in ax.patches if p.get_gid() == "bar:corner_frac"]
+    assert len(bars) == 4
+    greedy = t[t["policy"] == "greedy"].iloc[0]
+    assert sorted(b.get_width() for b in bars)[0] >= 0
+    assert any(b.get_width() == pytest.approx(100 * greedy["corner_frac"]) for b in bars)
+
+
+def test_headline_json(results, tmp_path, ckpt_root):
+    import json
+
+    from ntuple import train as T
+
+    eval_root = tmp_path / "results" / "eval"
+    for (run, ckpt, policy, depth), g in results.groupby(["run", "checkpoint", "policy", "depth"]):
+        label = V.policy_label(policy, depth)
+        target = V.RANDOM_TARGET if policy == "random" else V.Target(run, ckpt, tmp_path, 1)
+        path = V.csv_path(target, label, eval_root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        g.to_csv(path, index=False)
+    (tmp_path / "ck" / "overnight-a005").mkdir(parents=True)
+    (tmp_path / "ck" / "overnight-a005" / "meta.json").write_text(
+        json.dumps({"games_done": 12_900_000, "total_moves": 9 * 10**10, "elapsed_s": 28_800}))
+    (tmp_path / "logs").mkdir()
+    pd.DataFrame({c: [1.0] for c in T.LOG_FIELDS}).assign(alpha=0.05).to_csv(
+        tmp_path / "logs" / "overnight-a005.csv", index=False)
+    path = RE.write_headline("overnight-a005", eval_root=eval_root, ckpt_root=tmp_path / "ck",
+                             log_root=tmp_path / "logs")
+    head = json.loads(path.read_text())
+    assert path == tmp_path / "results" / "summary.json"
+    assert head["best_policy"] == "expectimax-d2" and head["training_hours"] == 8.0
+    assert set(head["policies"]) == {"random", "greedy", "expectimax-d1", "expectimax-d2"}
+    assert head["count_32768_total"] == sum(int((g["max_tile"] >= 32768).sum()) for _, g in
+                                            results.groupby(["policy", "depth"]))
+    assert head["best"]["reach"]["32768"]["pct"] >= 0 and head["alpha"] == 0.05

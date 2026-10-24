@@ -42,6 +42,7 @@ _T5 = np.uint64(0x00FF00FF00000000)
 _T6 = np.uint64(0x00000000FF00FF00)
 _S12 = np.uint64(12)
 _S24 = np.uint64(24)
+_S60 = np.uint64(60)
 
 # RNG constants
 _XS_MUL = np.uint64(0x2545F4914F6CDD1D)
@@ -236,6 +237,21 @@ def max_tile(board):
             best = t
         b >>= S4
     return np.int64(best)
+
+
+@njit("int64(uint64)", cache=True)
+def max_tile_corner(board):
+    """Corner cell (0, 3, 12 or 15, lowest first) that holds a largest tile; -1 if none does."""
+    top = np.uint64(max_tile(board))
+    if (board & NIBBLE) == top:
+        return 0
+    if ((board >> _S12) & NIBBLE) == top:
+        return 3
+    if ((board >> S48) & NIBBLE) == top:
+        return 12
+    if (board >> _S60) == top:
+        return 15
+    return -1
 
 
 @njit("boolean(uint64)", cache=True)

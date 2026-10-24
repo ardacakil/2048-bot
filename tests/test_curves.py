@@ -227,3 +227,20 @@ def test_make_all_writes_every_figure(tmp_path, log_root):
     written = sorted(p.name for p in (tmp_path / "figs").iterdir())
     assert written == sorted(f"{n}.{ext}" for n in C.FIGURES for ext in ("png", "svg"))
     assert list(table.index) == list(C.RUNS)
+
+
+def test_styled_restores_only_its_own_keys():
+    """Backend state set while drawing (e.g. interactive mode) must survive the style context."""
+    before = matplotlib.rcParams["font.size"], matplotlib.is_interactive()
+
+    @C._styled
+    def draw():
+        assert matplotlib.rcParams["font.size"] == C.RC["font.size"]
+        matplotlib.interactive(not before[1])  # what the inline backend does on first use
+
+    try:
+        draw()
+        assert matplotlib.rcParams["font.size"] == before[0]
+        assert matplotlib.is_interactive() == (not before[1])
+    finally:
+        matplotlib.interactive(before[1])

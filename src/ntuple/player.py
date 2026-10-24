@@ -13,6 +13,10 @@ are identical to expectimax.play_game on the same seed.
 Every game starts with an empty transposition table, so a game depends only on (weights, policy,
 depth, prune, tt_bits, seed): evaluation and replay regeneration give bit-identical games.
 
+Corner metrics, per move (board after the move and its spawn): corner_moves counts moves after
+which a largest tile is in a corner, stable_moves those after which it is in the same corner as
+after the previous move (engine.max_tile_corner: lowest corner index on ties).
+
 Record (filled in place, valid up to the number of moves played):
     spawns[0], spawns[1]   the two initial tiles as (cell, exponent)
     actions[k], rewards[k] move k and its merge reward
@@ -69,13 +73,15 @@ def resolve_settings(policy, depth, prune=None, tt_bits=None):
 
 
 @njit(
-    f"Tuple((int64, int64, int64, uint64))({M.W_TYPE}, int64, int64, int64, float64, "
+    f"Tuple((int64, int64, int64, uint64, int64, int64))({M.W_TYPE}, int64, int64, int64, float64, "
     "uint64[:], int64[:], float64[:], boolean, uint64, int64, int64[:], int64[:], int64[:, :])",
     cache=True,
 )
 def play_game(W, seed, policy, depth, prune, tt_keys, tt_depths, tt_vals, use_tt,
               start_board, max_moves, actions, rewards, spawns):
-    """Play one game (or max_moves moves from start_board). Returns (score, max_exp, moves, board).
+    """Play one game (or max_moves moves from start_board).
+
+    Returns (score, max_exp, moves, board, corner_moves, stable_moves).
 
     start_board = 0 starts a new game; max_moves = NO_LIMIT plays until no move is legal.
     """
@@ -93,6 +99,9 @@ def play_game(W, seed, policy, depth, prune, tt_keys, tt_depths, tt_vals, use_tt
     legal = np.empty(4, np.int64)
     score = 0
     n = 0
+    corner_moves = 0
+    stable_moves = 0
+    prev_corner = E.max_tile_corner(board)
     while n != max_moves:
         if policy == RANDOM:
             k = 0
@@ -112,9 +121,15 @@ def play_game(W, seed, policy, depth, prune, tt_keys, tt_depths, tt_vals, use_tt
         actions[n] = a
         rewards[n] = r
         spawns[n + 2, 0], spawns[n + 2, 1] = E.spawned_cell(after, board)
+        corner = E.max_tile_corner(board)
+        if corner >= 0:
+            corner_moves += 1
+            if corner == prev_corner:
+                stable_moves += 1
+        prev_corner = corner
         score += r
         n += 1
-    return score, E.max_tile(board), n, board
+    return score, E.max_tile(board), n, board, corner_moves, stable_moves
 
 
 @dataclasses.dataclass
@@ -125,6 +140,8 @@ class GameRecord:
     moves: int
     final_board: int
     wall_s: float
+    corner_frac: float  # share of moves after which a largest tile is in a corner
+    corner_stable_frac: float  # ... in the same corner as after the previous move
     init: np.ndarray = None  # (2, 2) initial (cell, exponent); None for games from start_board
     actions: np.ndarray = None
     rewards: np.ndarray = None
@@ -154,11 +171,12 @@ class Player:
         """Play game `seed` with an empty transposition table; returns a GameRecord."""
         self.table[1][:] = X.NO_ENTRY
         t0 = time.perf_counter()
-        score, max_exp, n, board = play_game(
+        score, max_exp, n, board, corner, stable = play_game(
             self.W, seed, POLICIES[self.policy], self.depth, self.prune, *self.table, self.use_tt,
             start_board, max_moves, self.actions, self.rewards, self.spawns)
         wall = time.perf_counter() - t0
-        rec = GameRecord(int(seed), int(score), 1 << int(max_exp), int(n), int(board), wall)
+        rec = GameRecord(int(seed), int(score), 1 << int(max_exp), int(n), int(board), wall,
+                         corner / n if n else 0.0, stable / n if n else 0.0)
         if record:
             if start_board == 0:
                 rec.init = self.spawns[:2].copy()

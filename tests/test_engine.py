@@ -106,7 +106,7 @@ MOVE_FUNCS = ["move", "move_left", "move_right", "move_up", "move_down"]
 INT_ONLY_FUNCS = MOVE_FUNCS + [
     "transpose", "afterstate", "is_legal", "legal_moves", "count_empty",
     "max_tile", "is_game_over", "encode", "decode", "make_rng", "rng_next", "rng_below",
-    "spawned_cell",
+    "spawned_cell", "max_tile_corner",
 ]
 # these use rng_uniform (one intended uint64 -> float64 conversion), but must still never
 # treat a board as signed
@@ -474,3 +474,15 @@ def test_spawned_cell_corners_and_equal_boards():
     assert E.spawned_cell(empty, E.from_values([[0] * 4] * 3 + [[0, 0, 0, 4]])) == (15, 2)
     b = E.from_values([[2, 4, 8, 16], [0] * 4, [0] * 4, [0] * 4])
     assert E.spawned_cell(b, b) == (-1, 0)
+
+
+def test_max_tile_corner():
+    V = E.from_values
+    assert E.max_tile_corner(V([[64, 2, 0, 0], [0] * 4, [0] * 4, [0] * 4])) == 0
+    assert E.max_tile_corner(V([[2, 0, 0, 64], [0] * 4, [0] * 4, [0] * 4])) == 3
+    assert E.max_tile_corner(V([[0] * 4, [0] * 4, [0] * 4, [64, 0, 0, 2]])) == 12
+    assert E.max_tile_corner(V([[0] * 4, [0] * 4, [0] * 4, [2, 0, 0, 32768]])) == 15  # top nibble
+    assert E.max_tile_corner(V([[2, 0, 0, 0], [0, 64, 0, 0], [0] * 4, [0] * 4])) == -1
+    # ties: any corner holding a largest tile counts, lowest corner index first
+    assert E.max_tile_corner(V([[0, 64, 0, 0], [0] * 4, [0] * 4, [0, 0, 0, 64]])) == 15
+    assert E.max_tile_corner(V([[0, 0, 0, 64], [0] * 4, [0] * 4, [64, 0, 0, 0]])) == 3

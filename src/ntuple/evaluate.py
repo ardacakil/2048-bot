@@ -47,11 +47,12 @@ from ntuple.train import CHECKPOINT_ROOT, REACH_TILES, ROOT, load_checkpoint
 EVAL_ROOT = ROOT / "results" / "eval"
 SUMMARY_PATH = ROOT / "results" / "eval_summary.csv"
 CSV_FIELDS = ["run", "checkpoint", "games_trained", "policy", "depth", "seed", "score", "max_tile",
-              "max_tile_pos", "max_tile_in_corner", "moves", "wall_s", "ms_per_move", "final_board",
-              "n_workers", "prune", "tt_bits"]
+              "max_tile_pos", "max_tile_in_corner", "corner_frac", "corner_stable_frac", "moves",
+              "wall_s", "ms_per_move", "final_board", "n_workers", "prune", "tt_bits"]
 COLUMN_TYPES = {"run": str, "checkpoint": str, "games_trained": np.int64, "policy": str,
                 "depth": np.int64, "seed": np.int64, "score": np.int64, "max_tile": np.int64,
-                "max_tile_pos": np.int64, "max_tile_in_corner": bool, "moves": np.int64,
+                "max_tile_pos": np.int64, "max_tile_in_corner": bool, "corner_frac": np.float64,
+                "corner_stable_frac": np.float64, "moves": np.int64,
                 "wall_s": np.float64, "ms_per_move": np.float64, "final_board": str,
                 "n_workers": np.int64, "prune": np.float64, "tt_bits": np.int64}
 SETTINGS = ("run", "checkpoint", "games_trained", "policy", "depth", "prune", "tt_bits")
@@ -165,7 +166,8 @@ def _play(seed):
     rec = _worker["player"].play(seed, record=False)
     pos, corner = max_tile_position(rec.final_board)
     return {"seed": seed, "score": rec.score, "max_tile": rec.max_tile, "max_tile_pos": pos,
-            "max_tile_in_corner": corner, "moves": rec.moves, "wall_s": rec.wall_s,
+            "max_tile_in_corner": corner, "corner_frac": rec.corner_frac,
+            "corner_stable_frac": rec.corner_stable_frac, "moves": rec.moves, "wall_s": rec.wall_s,
             "ms_per_move": rec.wall_s / rec.moves * 1e3 if rec.moves else 0.0,
             "final_board": board_hex(rec.final_board)}
 
@@ -244,12 +246,17 @@ def _run_pool(target, policy, depth, prune, tt_bits, todo, workers, fixed, out_c
     return rows
 
 
+def format_per_move(ms):
+    """Time per move with useful precision: µs below 0.1 ms."""
+    return f"{ms * 1e3:.2f} µs/move" if ms < 0.1 else f"{ms:.3f} ms/move"
+
+
 def summary_line(df):
     s = S.summarize(df)
     return (f"  {s['games']:,} games  score {s['mean_score']:,.0f} [{s['mean_lo']:,.0f}, {s['mean_hi']:,.0f}]"
             f"  median {s['median_score']:,.0f}  max {s['max_score']:,}  "
             + "  ".join(f"{t}: {s[f'reach_{t}']:.1f}%" for t in S.REACH_TILES)
-            + f"  {s['ms_per_move']:.3f} ms/move")
+            + f"  corner {100 * s['corner_frac']:.1f}% of moves  {format_per_move(s['ms_per_move'])}")
 
 
 # ---------------------------------------------------------------- notebook API (unchanged)
@@ -292,7 +299,7 @@ def format_summary(s):
         f"  score   avg {s['avg_score']:,.0f}  ± {s['std_score']:,.0f}   median {s['median_score']:,.0f}   max {s['max_score']:,}",
         "  reach   " + "   ".join(f"{t}: {s[f'reach_{t}']:.1f}%" for t in REACH_TILES),
         "  max tile " + "  ".join(f"{t}: {p:.1f}%" for t, p in s["max_tile_pct"].items()),
-        f"  time    {s['ms_per_move']:.3f} ms/move (per worker)",
+        f"  time    {format_per_move(s['ms_per_move'])} (per worker)",
     ]
     return "\n".join(lines)
 
@@ -300,20 +307,29 @@ def format_summary(s):
 # ---------------------------------------------------------------- single-process benchmark
 
 
-def benchmark(target, labels=("greedy", "d1", "d2", "d3"), moves=100, seed=0, stages=BENCH_STAGES,
-              prune=None, tt_bits=None, out=EVAL_ROOT, verbose=True):
-    """ms/move per policy and game stage, single process. Returns (and writes) the rows."""
+def benchmark(target, labels=("greedy", "d1", "d2", "d3"), moves=None, seed=0, stages=BENCH_STAGES,
+              prune=None, tt_bits=None, out=EVAL_ROOT, verbose=True, ref_games=21):
+    """ms/move per policy and game stage, single process. Returns (and writes) the rows.
+
+    Positions come from a typical greedy game: the median-length one of seeds seed .. seed +
+    ref_games - 1 (a single seed can die early and give only early-game positions). Each segment
+    plays `moves` moves; by default 100 for depth >= 2 and 2,000 for the cheap policies, whose
+    100 moves would take ~50 µs and be dominated by per-call overhead.
+    """
     W, _ = load_checkpoint(target.path)  # in RAM, so page faults do not count as search time
-    ref = Player(W, "greedy").play(seed)
+    greedy = Player(W, "greedy")
+    lengths = sorted((greedy.play(s, record=False).moves, s) for s in range(seed, seed + ref_games))
+    ref = greedy.play(lengths[len(lengths) // 2][1])
     boards = trajectory(ref.init, ref.actions, ref.spawns)
     rows = []
     for label in labels:
         policy, depth = parse_label(label)
         player = Player(W, policy, depth, prune, tt_bits)
-        player.play(seed, max_moves=1)  # load the compiled code before timing
+        player.play(ref.seed, max_moves=1)  # load the compiled code before timing
+        n_moves = moves or (100 if depth >= 2 else 2000)
         for stage in stages:
             k = int(stage * ref.moves)
-            rec = player.play(seed, start_board=int(boards[k]), max_moves=moves, record=False)
+            rec = player.play(ref.seed, start_board=int(boards[k]), max_moves=n_moves, record=False)
             rows.append({"run": target.run, "checkpoint": target.checkpoint,
                          "games_trained": target.games_trained, "policy": policy, "depth": depth,
                          "prune": player.prune, "tt_bits": player.tt_bits, "stage": stage,
@@ -322,16 +338,17 @@ def benchmark(target, labels=("greedy", "d1", "d2", "d3"), moves=100, seed=0, st
             if verbose:
                 r = rows[-1]
                 print(f"  {policy_label(policy, depth):14s} stage {stage:4.0%} (move {k:>6,})  "
-                      f"{r['moves']:>4} moves  {r['ms_per_move']:9.3f} ms/move", flush=True)
+                      f"{r['moves']:>4} moves  {format_per_move(r['ms_per_move']):>14s}", flush=True)
     df = pd.DataFrame(rows)
     if out:
         path = Path(out) / target.run / target.checkpoint / "bench.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(path, index=False)
     if verbose:
-        print(f"reference greedy game: seed {seed}, {ref.moves:,} moves, score {ref.score:,}")
+        print(f"reference greedy game: seed {ref.seed} (median length of {ref_games}), "
+              f"{ref.moves:,} moves, score {ref.score:,}")
         for (policy, depth), g in df.groupby(["policy", "depth"], sort=False):
-            print(f"  {policy_label(policy, depth):14s} mean {g['wall_s'].sum() / g['moves'].sum() * 1e3:9.3f} ms/move")
+            print(f"  {policy_label(policy, depth):14s} mean {format_per_move(g['wall_s'].sum() / g['moves'].sum() * 1e3):>14s}")
     return df
 
 
@@ -369,7 +386,8 @@ def main(argv=None):
     p.add_argument("--no-summary", action="store_true", help=f"do not rebuild {SUMMARY_PATH.name}")
     p.add_argument("--bench", action="store_true", help="single-process ms/move benchmark")
     p.add_argument("--bench-policies", default="greedy,d1,d2,d3")
-    p.add_argument("--bench-moves", type=int, default=100)
+    p.add_argument("--bench-moves", type=int, default=None,
+                   help="moves per position (default 100 for depth >= 2, 2000 otherwise)")
     args = p.parse_args(argv)
 
     if args.bench:

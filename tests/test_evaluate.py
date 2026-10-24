@@ -48,6 +48,7 @@ def test_csv_columns_types_and_settings(eval_root):
         assert r["max_tile"] == 1 << E.max_tile(board) and E.is_game_over(board)
         assert (r["max_tile_pos"], r["max_tile_in_corner"]) == V.max_tile_position(board)
         assert r["ms_per_move"] == pytest.approx(r["wall_s"] / r["moves"] * 1e3)
+        assert 0 <= r["corner_stable_frac"] <= r["corner_frac"] <= 1
     greedy = V.read_results(eval_root / EVAL_RUN / "final" / "greedy.csv")
     assert (greedy["prune"] == 0).all() and (greedy["tt_bits"] == 0).all()
     random = V.read_results(eval_root / "random" / "random.csv")
@@ -150,9 +151,17 @@ def test_cli_writes_csv_and_summary(ckpt_root, tmp_path):
 
 
 def test_benchmark(final, tmp_path):
-    df = V.benchmark(final, labels=("greedy", "d1"), moves=5, stages=(0.0, 0.5), out=tmp_path, verbose=False)
+    df = V.benchmark(final, labels=("greedy", "d1"), moves=5, stages=(0.0, 0.5), out=tmp_path, verbose=False,
+                     ref_games=5)
     assert len(df) == 4 and set(df["policy"]) == {"greedy", "expectimax"}
     assert (df["moves"] <= 5).all() and (df["ms_per_move"] > 0).all()
     assert df[df["stage"] == 0.5]["start_move"].iloc[0] > 0
     saved = pd.read_csv(tmp_path / EVAL_RUN / "final" / "bench.csv")
     assert len(saved) == 4 and saved["tt_bits"].tolist() == [0, 0, 18, 18]
+
+
+def test_format_per_move():
+    assert V.format_per_move(0.00035) == "0.35 µs/move"
+    assert V.format_per_move(0.0991) == "99.10 µs/move"
+    assert V.format_per_move(0.235) == "0.235 ms/move"
+    assert V.format_per_move(12.5) == "12.500 ms/move"
