@@ -116,12 +116,20 @@ the original target.
   on shared axes (average score against games and against hours, and the 2048 and 8192 rates).
   They work while the runs are still going.
 - Evaluate a finished run (one at a time, after training has stopped, since the evaluation
-  uses 8 worker processes):
+  uses 8 worker processes). Every game is a row in `results/eval/<run>/<checkpoint>/<policy>.csv`;
+  rerunning skips games already there, so an interrupted evaluation resumes. Game i uses seed
+  i for every policy and checkpoint, and `results/eval_summary.csv` is rebuilt at the end:
 
   ```bash
-  ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 1000 --depth 0
-  ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 200 --depth 2
+  ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 1000 --depth 0     # greedy
+  ~/.local/bin/uv run python -m ntuple.evaluate --run overnight-a01 --games 200 --depth 2      # expectimax
+  ~/.local/bin/uv run python -m ntuple.evaluate --policy random --games 10000
+  ~/.local/bin/uv run python -m ntuple.evaluate --runs overnight-a01,overnight-a005 --checkpoints all --games 10000
+  ~/.local/bin/uv run python -m ntuple.evaluate --bench --run overnight-a005    # single-process ms/move
+  ~/.local/bin/uv run python -m analysis.report --compare overnight-a005,overnight-a0025
   ```
+
+  `--depth` counts chance layers: 0 = greedy (the training policy), 1-3 = expectimax.
 
 - Evaluate or watch a milestone (pass its directory):
 
@@ -129,6 +137,13 @@ the original target.
   ls checkpoints/overnight-a01/milestones/
   ~/.local/bin/uv run python -m ntuple.evaluate --checkpoint checkpoints/overnight-a01/milestones/games-0001000000 --games 1000 --depth 0
   ~/.local/bin/uv run python -m game.play --bot checkpoints/overnight-a01/milestones/games-0001000000 --depth 2
+  ```
+
+- Replays (JSON a browser can replay; regenerated from the seed and verified):
+
+  ```bash
+  ~/.local/bin/uv run python -m ntuple.replays --run overnight-a005      # best/median games
+  ~/.local/bin/uv run python -m ntuple.replays --verify results/replays/*.json
   ```
 
 ## Measurements behind these numbers (M4, 2026-10-23)

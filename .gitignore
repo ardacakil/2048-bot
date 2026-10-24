@@ -23,3 +23,9 @@ logs/
 # Secrets and OS files
 .env
 .DS_Store
+
+# Evaluation: per-game CSVs are cheap to regenerate, except expectimax ones (small, hours of CPU).
+# results/eval_summary.csv, results/replays/ and figures/ are committed.
+results/eval/**
+!results/eval/**/
+!results/eval/**/expectimax-*.csv

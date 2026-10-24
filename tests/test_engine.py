@@ -106,6 +106,7 @@ MOVE_FUNCS = ["move", "move_left", "move_right", "move_up", "move_down"]
 INT_ONLY_FUNCS = MOVE_FUNCS + [
     "transpose", "afterstate", "is_legal", "legal_moves", "count_empty",
     "max_tile", "is_game_over", "encode", "decode", "make_rng", "rng_next", "rng_below",
+    "spawned_cell",
 ]
 # these use rng_uniform (one intended uint64 -> float64 conversion), but must still never
 # treat a board as signed
@@ -445,3 +446,31 @@ def test_play_random_games_matches_single_games():
         assert E.play_random_game(rng) == (scores[i], tiles[i], moves[i])
     # score is a sum of merges, so it is always even and at least 4 per merge
     assert (scores % 2 == 0).all()
+
+
+# ---------------------------------------------------------------- spawn location
+
+
+def test_spawned_cell_finds_the_new_tile():
+    rng = np.random.default_rng(3)
+    spawn_rng = E.make_rng(7)
+    checked = 0
+    for _ in range(500):
+        after = random_board(rng, p_empty=0.5)
+        if E.count_empty(after) == 0:
+            continue
+        board = E.spawn_tile(after, spawn_rng)
+        cell, exp = E.spawned_cell(after, board)
+        before, now = E.decode(after).ravel(), E.decode(board).ravel()
+        assert before[cell] == 0 and now[cell] == exp and exp in (1, 2)
+        assert np.array_equal(np.delete(before, cell), np.delete(now, cell))
+        checked += 1
+    assert checked > 400
+
+
+def test_spawned_cell_corners_and_equal_boards():
+    empty = E.ZERO
+    assert E.spawned_cell(empty, E.from_values([[2, 0, 0, 0]] + [[0] * 4] * 3)) == (0, 1)
+    assert E.spawned_cell(empty, E.from_values([[0] * 4] * 3 + [[0, 0, 0, 4]])) == (15, 2)
+    b = E.from_values([[2, 4, 8, 16], [0] * 4, [0] * 4, [0] * 4])
+    assert E.spawned_cell(b, b) == (-1, 0)

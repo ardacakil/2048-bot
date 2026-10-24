@@ -19,8 +19,8 @@ requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# src/ holds several top-level packages: `import game`, `import ntuple`, `import dqn`
-module-name = ["game", "ntuple", "dqn"]
+# src/ holds several top-level packages: `import game`, `import ntuple`, `import dqn`, `import analysis`
+module-name = ["game", "ntuple", "dqn", "analysis"]
 module-root = "src"
 
 [dependency-groups]

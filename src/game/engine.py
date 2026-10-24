@@ -335,6 +335,22 @@ def spawn_tile(board, rng):
     return board  # unreachable
 
 
+@njit("Tuple((int64, int64))(uint64, uint64)", cache=True)
+def spawned_cell(after, board):
+    """(cell, exponent) of the tile that spawn_tile added to `after` to give `board`.
+
+    Returns (-1, 0) if the boards are equal. Only valid when `board` is `after` plus one tile.
+    """
+    diff = after ^ board
+    if diff == ZERO:
+        return -1, 0
+    cell = 0
+    while (diff & NIBBLE) == ZERO:
+        diff >>= S4
+        cell += 1
+    return cell, np.int64(diff & NIBBLE)
+
+
 @njit("uint64(uint64[:])", cache=True)
 def new_game(rng):
     """Empty board with two spawned tiles."""

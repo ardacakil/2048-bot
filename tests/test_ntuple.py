@@ -555,7 +555,8 @@ def trained_checkpoint(tmp_path_factory):
 def test_evaluate_reproducible_across_worker_counts(trained_checkpoint):
     s1, df1 = V.evaluate(trained_checkpoint, games=6, depth=1, workers=1, verbose=False)
     s3, df3 = V.evaluate(trained_checkpoint, games=6, depth=1, workers=3, verbose=False)
-    assert df1[["game", "score", "moves", "max_tile"]].equals(df3[["game", "score", "moves", "max_tile"]])
+    cols = ["seed", "score", "moves", "max_tile"]  # per-game rows now use the eval CSV columns
+    assert df1[cols].equals(df3[cols])
     assert s1["avg_score"] == s3["avg_score"] > 1100
     assert sum(s1["max_tile_pct"].values()) == pytest.approx(100)
     assert s1["ms_per_move"] > 0
@@ -568,8 +569,8 @@ def test_evaluate_reproducible_across_worker_counts(trained_checkpoint):
 _IR_CHECK = """
 import json, re, sys
 from game import engine
-from ntuple import model, train, expectimax
-mods = {"model": model, "train": train, "expectimax": expectimax}
+from ntuple import model, train, expectimax, player
+mods = {"model": model, "train": train, "expectimax": expectimax, "player": player}
 OPS = re.compile(r"\\b(uitofp|sitofp|fptoui|fptosi|ashr)\\b")
 out = {}
 for spec in sys.argv[1:]:
@@ -581,7 +582,8 @@ print(json.dumps(out))
 INT_ONLY = ["model:mirror", "model:flip", "model:symmetries", "model:tuple_indices",
             "model:features", "expectimax:_slot"]
 WITH_FLOATS = ["model:value", "model:update", "model:greedy_move", "train:train_games",
-               "expectimax:chance_value", "expectimax:best_move", "expectimax:play_game"]
+               "expectimax:chance_value", "expectimax:best_move", "expectimax:play_game",
+               "player:play_game"]
 
 
 def test_no_signed_or_float_promotion_in_compiled_code(tmp_path):
