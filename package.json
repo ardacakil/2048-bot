@@ -1,0 +1,8 @@
+{
+  "name": "2048-bot-web",
+  "private": true,
+  "description": "No dependencies: this file only marks web/js and tests/web as ES modules for node --test.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test tests/web/*.test.mjs" }
+}

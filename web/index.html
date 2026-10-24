@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d0e11">
+<meta name="description" content="A self-trained 2048 bot plays a new game on the server; your browser replays it move by move.">
+<title>2048 bot</title>
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/site.css">
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<main class="card">
+  <header class="head">
+    <h1>2048 bot</h1>
+    <p class="lede">Pick a milestone. The server plays a new game until that tile appears, and your browser replays it.</p>
+  </header>
+
+  <div class="targets" role="group" aria-label="Target tile">
+    <button type="button" class="target" data-target="2048" aria-pressed="true"><span class="target-value">2048</span><span class="target-note"></span></button>
+    <button type="button" class="target" data-target="4096" aria-pressed="false"><span class="target-value">4096</span><span class="target-note"></span></button>
+    <button type="button" class="target" data-target="8192" aria-pressed="false"><span class="target-value">8192</span><span class="target-note"></span></button>
+    <button type="button" class="target" data-target="16384" aria-pressed="false"><span class="target-value">16384</span><span class="target-note"></span></button>
+  </div>
+
+  <div class="progress idle" id="progress" role="progressbar" aria-label="Moves played back" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill"></div></div>
+
+  <div class="board-wrap">
+    <div class="board" id="board" role="img" aria-label="2048 board, replayed move by move">
+      <div class="grid" aria-hidden="true">
+        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+      </div>
+      <div class="tiles" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <dl class="stats">
+    <div><dt>Score</dt><dd id="score">0</dd></div>
+    <div><dt>Moves</dt><dd id="moves">0</dd></div>
+    <div><dt>Max tile</dt><dd id="max-tile">–</dd></div>
+  </dl>
+
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <div class="actions">
+    <button type="button" class="btn" id="primary">Start</button>
+  </div>
+
+  <noscript><p class="status">This page needs JavaScript to replay games.</p></noscript>
+
+  <details class="how">
+    <summary>How it works</summary>
+    <p>The bot taught itself by playing about 13.9 million games against itself. Its evaluation is
+    an n-tuple network: four 6-cell patterns, each looked up in all 8 rotations and reflections of
+    the board, trained with temporal-difference learning. Here it plays with expectimax search,
+    depth 2: for each move it averages over the tiles that could spawn, two layers deep, and picks
+    the move the network expects to be best.</p>
+    <p>Each game gets a fresh random seed. The server computes it and streams every move; your
+    browser checks every board against the rules and replays it at a fixed pace.</p>
+    <p class="how-numbers">Measured at depth 2:</p>
+    <ul class="how-list">
+      <li><strong>90.5%</strong> of 3,000 evaluation games reach 16384</li>
+      <li><strong>320.8k</strong> mean score over those games</li>
+      <li><strong>0.124 ms</strong> per move on one Apple M4 core</li>
+    </ul>
+  </details>
+
+  <footer class="foot"><a href="https://ardacakil.com/">← ardacakil.com</a></footer>
+</main>
+</body>
+</html>

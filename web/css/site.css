@@ -1,0 +1,347 @@
+/* Layout and components. Values come from tokens.css only.
+   One column everywhere: milestones, progress, board, stats, status, Start, "how it works".
+   Mobile: a tinted photo behind a frosted-glass card. Desktop: the same card on a dark page. */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5) var(--gutter);
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+@media (max-width: 47.99rem) {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: var(--bg-tint), var(--bg-photo);
+    background-color: var(--color-bg);
+  }
+}
+
+/* ---------------------------------------------------------------- glass card */
+
+.card {
+  width: 100%;
+  max-width: var(--card-max);
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--card-pad);
+  border: var(--border-thin) solid var(--color-glass-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .card {
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+    backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+  }
+}
+
+.head h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-black);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.1;
+}
+
+.lede {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---------------------------------------------------------------- milestones / targets */
+
+.targets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.target {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 3.25rem;
+  padding: var(--space-2) var(--space-1);
+  border: var(--border-button) solid var(--color-outline);
+  border-radius: var(--radius-tile);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration-ui), background-color var(--duration-ui), opacity var(--duration-ui);
+}
+
+.target-value {
+  font-size: var(--text-md);
+  font-weight: var(--weight-black);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-tight);
+}
+
+.target-note {
+  min-height: 1em;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.target:hover:not(:disabled) { background: var(--color-hover); }
+
+.target[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.target.passed {
+  background: var(--color-accent-soft);
+}
+
+.target.passed .target-value::after { content: " ✓"; }
+
+.target[data-state="missed"] .target-note,
+.target[data-state="done"] .target-note { color: var(--color-text); }
+
+.target:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ---------------------------------------------------------------- progress */
+
+.progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-track);
+}
+
+.progress.idle { visibility: hidden; }
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transform-origin: left center;
+  transform: scaleX(var(--progress, 0));
+}
+
+/* ---------------------------------------------------------------- board */
+
+.board-wrap { container-type: inline-size; }
+
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-board);
+  background: var(--color-board);
+  border: var(--border-thin) solid var(--color-glass-border);
+}
+
+.grid,
+.tiles {
+  position: absolute;
+  inset: var(--board-gap);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: var(--board-gap);
+}
+
+.cell {
+  border-radius: var(--radius-tile);
+  background: var(--color-cell);
+}
+
+.tile {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc((100% - 3 * var(--board-gap)) / 4);
+  aspect-ratio: 1;
+  transform: translate(calc(var(--col, 0) * (100% + var(--board-gap))),
+                       calc(var(--row, 0) * (100% + var(--board-gap))));
+}
+
+.tile.moving {
+  z-index: 1;
+  transition: transform var(--slide-ms, 100ms) ease-in-out;
+}
+
+.tile[data-exp="0"] { visibility: hidden; }
+
+.tile-inner {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-tile);
+  background: var(--tile-bg, var(--tile-15-bg));
+  color: var(--tile-fg, var(--tile-15-fg));
+  font-size: 2rem;
+  font-size: 11cqi;
+  font-weight: var(--weight-black);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1;
+}
+
+.tile[data-digits="3"] .tile-inner { font-size: 1.6rem; font-size: 9cqi; }
+.tile[data-digits="4"] .tile-inner { font-size: 1.3rem; font-size: 7.5cqi; }
+.tile[data-digits="5"] .tile-inner { font-size: 1.05rem; font-size: 6cqi; }
+
+.tile.goal .tile-inner {
+  box-shadow: 0 0 0 3px var(--color-accent), 0 0 28px var(--color-accent-glow);
+}
+
+.tile[data-exp="1"] { --tile-bg: var(--tile-1-bg); --tile-fg: var(--tile-1-fg); }
+.tile[data-exp="2"] { --tile-bg: var(--tile-2-bg); --tile-fg: var(--tile-2-fg); }
+.tile[data-exp="3"] { --tile-bg: var(--tile-3-bg); --tile-fg: var(--tile-3-fg); }
+.tile[data-exp="4"] { --tile-bg: var(--tile-4-bg); --tile-fg: var(--tile-4-fg); }
+.tile[data-exp="5"] { --tile-bg: var(--tile-5-bg); --tile-fg: var(--tile-5-fg); }
+.tile[data-exp="6"] { --tile-bg: var(--tile-6-bg); --tile-fg: var(--tile-6-fg); }
+.tile[data-exp="7"] { --tile-bg: var(--tile-7-bg); --tile-fg: var(--tile-7-fg); }
+.tile[data-exp="8"] { --tile-bg: var(--tile-8-bg); --tile-fg: var(--tile-8-fg); }
+.tile[data-exp="9"] { --tile-bg: var(--tile-9-bg); --tile-fg: var(--tile-9-fg); }
+.tile[data-exp="10"] { --tile-bg: var(--tile-10-bg); --tile-fg: var(--tile-10-fg); }
+.tile[data-exp="11"] { --tile-bg: var(--tile-11-bg); --tile-fg: var(--tile-11-fg); }
+.tile[data-exp="12"] { --tile-bg: var(--tile-12-bg); --tile-fg: var(--tile-12-fg); }
+.tile[data-exp="13"] { --tile-bg: var(--tile-13-bg); --tile-fg: var(--tile-13-fg); }
+.tile[data-exp="14"] { --tile-bg: var(--tile-14-bg); --tile-fg: var(--tile-14-fg); }
+.tile[data-exp="15"] { --tile-bg: var(--tile-15-bg); --tile-fg: var(--tile-15-fg); }
+
+/* ---------------------------------------------------------------- stats, status, button */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  text-align: center;
+}
+
+.stats dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.stats dd {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  min-height: 2.9em;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.status[data-tone="good"] { color: var(--color-good); }
+.status[data-tone="bad"] { color: var(--color-bad); }
+
+.actions {
+  display: flex;
+  justify-content: center;
+}
+
+.btn {
+  min-width: 12rem;
+  padding: var(--space-3) var(--space-6);
+  border: var(--border-button) solid var(--color-outline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  transition: background-color var(--duration-ui), opacity var(--duration-ui);
+}
+
+.btn:hover:not(:disabled) { background: var(--color-hover); }
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.target:focus-visible,
+.btn:focus-visible,
+.how summary:focus-visible,
+.foot a:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- how it works, footer */
+
+.how {
+  border-top: var(--border-thin) solid var(--color-glass-border);
+  padding-top: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.how summary {
+  color: var(--color-text);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.how p { margin: var(--space-3) 0 0; }
+
+.how-list {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+.how-list strong { color: var(--color-text); }
+
+.foot {
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.foot a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.foot a:hover { color: var(--color-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.moving,
+  .target,
+  .btn { transition: none; }
+}

@@ -12,8 +12,8 @@ animate.
 
 ## Live demo / Server
 
-**Live demo: coming soon at 2048.ardacakil.com** (phase 5: the browser frontend). The server side
-(phase 4) is built: pick a target tile (2048, 4096, 8192 or 16384), and a small VPS plays a **new**
+**Live demo: coming soon at [ardacakil.com/2048-bot](https://ardacakil.com/2048-bot/)** (not
+deployed yet). Pick a target tile (2048, 4096, 8192 or 16384), and a small VPS plays a **new**
 game with the trained network and depth-2 expectimax, streaming every move to the browser, which
 replays it until the target first appears.
 
@@ -25,10 +25,15 @@ replays it until the target first appears.
   on one vCPU and sends them in batches; the browser plays them back at 5 to 20 ms per move. One
   game computes at a time, others wait in a short queue with their position shown.
 - **API.** `GET /api/play/{target}` (Server-Sent Events: meta, queued, init, steps, end),
-  `GET /api/health`, `GET /api/stats`. Code in [`src/server/`](src/server/), deployment
-  (systemd, nginx, Cloudflare) in [`deploy/`](deploy/README.md).
+  `GET /api/health`, `GET /api/stats`, served under `/2048-bot/api/` on the site. Code in
+  [`src/server/`](src/server/), deployment (systemd, nginx) in [`deploy/`](deploy/README.md).
+- **Frontend.** Plain HTML, CSS and JavaScript modules in [`web/`](web/), no build step and no
+  third-party requests. The browser re-checks every streamed board against the rules before
+  drawing it. One game per target per page load; "watch again" replays it without the server.
+  Locally: `uv run uvicorn --factory server.dev:create_dev_app --reload --port 8200`, then open
+  http://127.0.0.1:8200/2048-bot/.
 
-Until the frontend exists, watch a live game in the terminal:
+A live game can also be watched in the terminal:
 `uv run python -m server.watch --url http://127.0.0.1:8200 --target 8192` (with the server
 running locally, see [Reproduce](#reproduce)). Recorded replays are in
 [`results/replays/`](results/replays/).

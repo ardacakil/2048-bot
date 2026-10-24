@@ -1,0 +1,109 @@
+/* Design tokens: every color, size, radius, blur and spacing used by the 2048 bot page.
+   Defined here first; the ardacakil.com site copies this file, so keep names generic. */
+
+/* Self-hosted font, fetched only once --font-sans names it. To switch: put the OFL variable
+   font at web/fonts/outfit-variable.woff2 and prepend "Outfit", to --font-sans below. */
+@font-face {
+  font-family: "Outfit";
+  src: url("../fonts/outfit-variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  /* type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.75rem;
+  --weight-regular: 400;
+  --weight-bold: 700;
+  --weight-black: 800;
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.08em;
+
+  /* palette */
+  --color-bg: #0d0e11;
+  --color-surface: #1a1c21;                  /* solid fallback for glass */
+  --color-glass: rgb(36 38 44 / 0.58);
+  --color-glass-border: rgb(255 255 255 / 0.14);
+  --color-text: #f1f2f4;
+  --color-text-muted: #a3a7b0;
+  --color-outline: rgb(255 255 255 / 0.32);
+  --color-outline-strong: rgb(255 255 255 / 0.85);
+  --color-hover: rgb(255 255 255 / 0.08);
+  --color-accent: #f2c14e;
+  --color-accent-soft: rgb(242 193 78 / 0.16);
+  --color-accent-glow: rgb(242 193 78 / 0.55);
+  --color-good: #8fdc9c;
+  --color-bad: #ffab91;
+  --color-focus: #9cc2ff;
+  --color-track: rgb(255 255 255 / 0.10);
+  --color-board: rgb(255 255 255 / 0.05);
+  --color-cell: rgb(255 255 255 / 0.06);
+
+  /* mobile background: tint over a photo. The photo is used only inside the mobile media
+     query, so desktop never downloads it. Real image (one line):
+     --bg-photo: url("../img/bg-mobile.webp") center / cover no-repeat; */
+  --bg-tint: linear-gradient(rgb(8 9 12 / 0.45), rgb(8 9 12 / 0.70));
+  --bg-photo: radial-gradient(90% 60% at 15% 5%, #343a48 0%, transparent 65%),
+              radial-gradient(80% 60% at 95% 100%, #3a2f2a 0%, transparent 60%),
+              linear-gradient(160deg, #191b21 0%, #0d0e11 100%);
+
+  /* spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --gutter: 16px;
+
+  /* shape */
+  --border-thin: 1px;
+  --border-button: 1.5px;
+  --radius-card: 28px;
+  --radius-board: 16px;
+  --radius-tile: 8px;
+  --radius-pill: 999px;
+  --blur-glass: 18px;
+
+  /* layout */
+  --card-max: 30rem;
+  --card-pad: var(--space-5);
+  --board-gap: 0.5rem;
+  --breakpoint-desktop: 48rem;               /* documentation only: media queries cannot use var() */
+
+  /* motion */
+  --duration-ui: 150ms;
+
+  /* tiles, by exponent: 1 = 2, 2 = 4, ... 11 = 2048, ... 15 = 32768 */
+  --tile-1-bg: #2f3239;   --tile-1-fg: #e9eaec;
+  --tile-2-bg: #3c4049;   --tile-2-fg: #eef0f2;
+  --tile-3-bg: #5c4a35;   --tile-3-fg: #ffffff;
+  --tile-4-bg: #7a5530;   --tile-4-fg: #ffffff;
+  --tile-5-bg: #995a2b;   --tile-5-fg: #ffffff;
+  --tile-6-bg: #b5582a;   --tile-6-fg: #ffffff;
+  --tile-7-bg: #c7832b;   --tile-7-fg: #ffffff;
+  --tile-8-bg: #d2972e;   --tile-8-fg: #1a1408;
+  --tile-9-bg: #dcac36;   --tile-9-fg: #1a1408;
+  --tile-10-bg: #e6c142;  --tile-10-fg: #1a1408;
+  --tile-11-bg: #f2d551;  --tile-11-fg: #1a1408;
+  --tile-12-bg: #4fd1c5;  --tile-12-fg: #062421;
+  --tile-13-bg: #3fa9f5;  --tile-13-fg: #04182a;
+  --tile-14-bg: #8b7bff;  --tile-14-fg: #ffffff;
+  --tile-15-bg: #e05bb5;  --tile-15-fg: #ffffff;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --card-max: 36rem;
+    --card-pad: var(--space-6);
+    --board-gap: 0.75rem;
+    --radius-tile: 10px;
+    --text-xl: 2rem;
+  }
+}
