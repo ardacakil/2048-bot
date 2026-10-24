@@ -136,3 +136,24 @@ class Expectimax:
 
     def play_game(self, rng):
         return play_game(self.W, rng, self.depth, self.prune, *self.table, self.use_tt)
+
+
+def load(name, depth=2, prune=None, tt_bits=None, mmap=True):
+    """Expectimax on a checkpoint: a run name under checkpoints/ or a directory path.
+
+    Returns (Expectimax, meta, checkpoint dir). prune/tt_bits default to the evaluation settings
+    for this depth (player.resolve_settings), so seed i plays the same game as in the eval CSVs.
+    mmap=True maps the weights copy-on-write (fast start, pages load on first use); False reads
+    all 268 MB up front.
+    """
+    from pathlib import Path
+
+    from ntuple.player import resolve_settings
+    from ntuple.train import CHECKPOINT_ROOT, load_checkpoint
+
+    ckpt = Path(name) if Path(name).is_dir() else CHECKPOINT_ROOT / name
+    if not (ckpt / "meta.json").exists():
+        raise SystemExit(f"no checkpoint at {ckpt}")
+    W, meta = load_checkpoint(ckpt, mmap=mmap)
+    prune, tt_bits = resolve_settings("expectimax" if depth else "greedy", depth, prune, tt_bits)
+    return Expectimax(W, depth=depth, prune=prune, tt_bits=tt_bits, use_tt=depth > 0), meta, ckpt

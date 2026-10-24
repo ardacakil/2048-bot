@@ -29,3 +29,28 @@ def test_game_over_detected():
             game.step(a)
         assert game.moves > before or game.over
     assert E.is_game_over(game.board)
+
+
+def test_until_stops_when_the_tile_first_appears():
+    game = Game(seed=0, until=2048)
+    game.board = E.from_values([[512, 512, 1024, 0], [0] * 4, [0] * 4, [0] * 4])
+    game.reached = False
+    game.step(E.LEFT)  # 1024 1024: not yet
+    assert not game.reached and not game.done and game.moves == 1
+    game.step(E.LEFT)  # 2048 appears on move 2
+    assert game.reached and game.done and game.moves == 2
+    board = game.board
+    game.step(E.RIGHT)  # ignored once the target is reached
+    assert game.moves == 2 and game.board == board
+
+
+def test_without_until_the_game_never_counts_as_reached():
+    game = Game(seed=0)
+    game.board = E.from_values([[1024, 1024, 0, 0], [0] * 4, [0] * 4, [0] * 4])
+    game.step(E.LEFT)
+    assert not game.reached and not game.done and game.moves == 1
+
+
+def test_engine_has_tile():
+    b = E.from_values([[2048, 2, 0, 0], [0] * 4, [0] * 4, [0] * 4])
+    assert E.has_tile(b, 2048) and E.has_tile(b, 1024) and not E.has_tile(b, 4096)

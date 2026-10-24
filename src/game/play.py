@@ -1,10 +1,11 @@
 """Play 2048 in the terminal on the Numba engine.
 
-    uv run python -m game.play [--seed N]
-    uv run python -m game.play --bot RUN [--depth 2] [--delay 0.05] [--seed N]
+    uv run python -m game.play [--seed N] [--until TILE]
+    uv run python -m game.play --bot RUN [--depth 2] [--delay 0.05] [--seed N] [--until TILE]
 
 Arrow keys or WASD to move, r to restart, q to quit. With --bot, watch the n-tuple
-checkpoint checkpoints/RUN play one game with expectimax; q quits.
+checkpoint checkpoints/RUN play one game with expectimax; q quits. --until stops the game as
+soon as a tile of at least that value first appears.
 """
 
 import argparse
@@ -58,8 +59,9 @@ COLORS_8 = {
 
 
 class Game:
-    def __init__(self, seed):
+    def __init__(self, seed, until=None):
         self.seed = seed
+        self.until = until
         self.rng = E.make_rng(seed)
         self.restart()
 
@@ -68,8 +70,16 @@ class Game:
         self.score = 0
         self.moves = 0
         self.over = False
+        self.reached = self.until is not None and E.has_tile(self.board, self.until)
+
+    @property
+    def done(self):
+        """No more moves: game over, or the --until tile has appeared."""
+        return self.over or self.reached
 
     def step(self, action):
+        if self.done:
+            return
         after, reward = E.move(self.board, action)
         if after == self.board:  # illegal: ignored
             return
@@ -77,6 +87,7 @@ class Game:
         self.score += reward
         self.moves += 1
         self.over = E.is_game_over(self.board)
+        self.reached = self.until is not None and E.has_tile(self.board, self.until)
 
 
 def init_colors():
@@ -124,7 +135,9 @@ def draw(scr, game, has_color, title="2048", footer=None):
 
     y = top + board_h
     if footer is not None:
-        scr.addstr(y, 0, footer, curses.A_BOLD if game.over else curses.A_NORMAL)
+        scr.addstr(y, 0, footer, curses.A_BOLD if game.done else curses.A_NORMAL)
+    elif game.reached:
+        scr.addstr(y, 0, f"Reached {game.until}!  r = restart, q = quit", curses.A_BOLD)
     elif game.over:
         scr.addstr(y, 0, "Game over!  r = restart, q = quit", curses.A_BOLD)
     else:
@@ -152,12 +165,12 @@ def read_key(scr):
     return -1
 
 
-def main(scr, seed):
+def main(scr, seed, until=None):
     curses.curs_set(0)
     scr.keypad(True)
     curses.set_escdelay(25)
     has_color = init_colors()
-    game = Game(seed)
+    game = Game(seed, until)
     while True:
         draw(scr, game, has_color)
         key = read_key(scr)
@@ -165,25 +178,28 @@ def main(scr, seed):
             return game
         if key in (ord("r"), ord("R")):
             game.restart()
-        elif key in KEYS and not game.over:
+        elif key in KEYS and not game.done:
             game.step(KEYS[key])
 
 
-def bot_main(scr, seed, bot, title, delay):
-    """Watch the bot play one full game; q quits at any time."""
+def bot_main(scr, seed, bot, title, delay, until=None):
+    """Watch the bot play one game (until game over or the --until tile); q quits at any time."""
     curses.curs_set(0)
     has_color = init_colors()
-    game = Game(seed)
+    game = Game(seed, until)
     game.over = E.is_game_over(game.board)
     scr.timeout(max(1, int(delay * 1000)))  # getch() doubles as the delay between moves
     while True:
-        footer = "Game over!  q = quit" if game.over else "bot playing   q quit"
+        if game.reached:
+            footer = f"Reached {until} in {game.moves:,} moves!  q = quit"
+        else:
+            footer = "Game over!  q = quit" if game.over else "bot playing   q quit"
         draw(scr, game, has_color, title, footer)
-        if game.over:
+        if game.done:
             scr.timeout(-1)  # nothing left to animate: wait for q
         if scr.getch() in (ord("q"), ord("Q")):
             return game
-        if not game.over:
+        if not game.done:
             action, _ = bot.best_move(game.board)
             game.step(action)
 
@@ -193,16 +209,10 @@ def load_bot(name, depth):
 
     Weights are memory-mapped copy-on-write, so the checkpoint file is never modified.
     """
-    from pathlib import Path
+    from ntuple import expectimax as X
 
-    from ntuple.expectimax import Expectimax
-    from ntuple.train import CHECKPOINT_ROOT, load_checkpoint
-
-    ckpt = Path(name) if Path(name).is_dir() else CHECKPOINT_ROOT / name
-    if not (ckpt / "meta.json").exists():
-        raise SystemExit(f"no checkpoint at {ckpt}")
-    W, meta = load_checkpoint(ckpt, mmap=True)
-    return Expectimax(W, depth=depth), f"{ckpt.name} ({meta['games_done']:,} games)"
+    bot, meta, ckpt = X.load(name, depth)
+    return bot, f"{ckpt.name} ({meta['games_done']:,} games)"
 
 
 if __name__ == "__main__":
@@ -211,13 +221,17 @@ if __name__ == "__main__":
     parser.add_argument("--bot", metavar="RUN", help="watch a checkpoint play (run name or directory)")
     parser.add_argument("--depth", type=int, default=2, help="bot expectimax depth (0 = greedy)")
     parser.add_argument("--delay", type=float, default=0.05, help="bot seconds between moves")
+    parser.add_argument("--until", type=int, default=None, metavar="TILE",
+                        help="stop when a tile of at least this value first appears (e.g. 2048)")
     args = parser.parse_args()
     seed = args.seed if args.seed is not None else time.time_ns() % (2**63)
     if args.bot:
         bot, name = load_bot(args.bot, args.depth)
         bot.best_move(E.new_game(E.make_rng(0)))  # load compiled code before the screen opens
         title = f"2048 bot: {name}, expectimax depth {args.depth}"
-        game = curses.wrapper(bot_main, seed, bot, title, args.delay)
+        game = curses.wrapper(bot_main, seed, bot, title, args.delay, args.until)
     else:
-        game = curses.wrapper(main, seed)
-    print(f"Final score {game.score} in {game.moves} moves, max tile {1 << E.max_tile(game.board)} (seed {seed})")
+        game = curses.wrapper(main, seed, args.until)
+    status = f", reached {args.until}" if game.reached else ""
+    print(f"Final score {game.score} in {game.moves} moves, max tile {1 << E.max_tile(game.board)}"
+          f"{status} (seed {seed})")

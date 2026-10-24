@@ -413,6 +413,11 @@ def play_random_games(seed, n_games):
 # ---------------------------------------------------------------- Python-side helpers (not jitted)
 
 
+def has_tile(board, tile):
+    """True once a tile of at least `tile` (a value such as 2048) is on the board."""
+    return (1 << max_tile(board)) >= tile
+
+
 def from_values(rows):
     """4x4 nested list of tile values (0, 2, 4, ...) -> board."""
     grid = np.zeros((4, 4), np.int64)
