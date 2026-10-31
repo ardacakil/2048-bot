@@ -12,8 +12,7 @@ animate.
 
 ## Live demo / Server
 
-**Live demo: coming soon at [ardacakil.com/2048-bot](https://ardacakil.com/2048-bot/)** (not
-deployed yet). Pick a target tile (2048, 4096, 8192 or 16384), and a small VPS plays a **new**
+**Live demo: [ardacakil.com/2048-bot](https://ardacakil.com/2048-bot/)**. Pick a target tile (2048, 4096, 8192 or 16384), and a small VPS plays a **new**
 game with the trained network and depth-2 expectimax, streaming every move to the browser, which
 replays it until the target first appears.
 
